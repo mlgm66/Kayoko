@@ -14,6 +14,15 @@
 "Archive.plist index is not an array" = "Archive.plist 的 index 不是数组";
 "Back" = "返回";
 "Cancel" = "取消";
+"Unable to Save Image" = "无法保存图片";
+"The edited image could not be saved. You can retry or cancel." = "编辑后的图片无法保存，请重试或取消。";
+"Retry" = "重试";
+"Restore Original" = "复原";
+"OK" = "好";
+"Restore to Original?" = "复原到原图？";
+"This removes all edits from this image." = "将移除这张图片的所有编辑。";
+"Unable to Restore Image" = "无法复原图片";
+"The current image has not been changed. Please try again." = "当前图片未改变，请重试。";
 "Categories" = "类别";
 "Clear" = "清空";
 "Clear Clipboard" = "清除剪贴板";
@@ -59,7 +68,6 @@
 "Open Settings → “Kayoko” to complete verification." = "打开设置 → “Kayoko” 以完成验证。";
 "Paste" = "粘贴";
 "Phone Numbers" = "号码";
-"Preview" = "预览";
 "SQLite operation failed" = "数据库操作失败";
 "Save" = "保存";
 "Save to Photos" = "保存到照片";
@@ -89,3 +97,4 @@
 "invalid %@ timestamp" = "%@ 的时间戳无效";
 "invalid item path %@" = "条目路径 %@ 无效";
 "invalid timestamp %@" = "时间戳 %@ 无效";
+"Look Up" = "查询";

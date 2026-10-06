@@ -4,6 +4,7 @@
 //
 
 #import "KayokoTagManagementViewController.h"
+#import "KayokoSearchPresentation.h"
 #import "KayokoKeyboardAvoidanceCoordinator.h"
 #import "KayokoTag.h"
 #import "KayokoTagEditorViewController.h"
@@ -46,6 +47,7 @@ static CGFloat const kKayokoTagPlaceholderMinimumHeight = 96.0;
 #pragma mark - State
 
 @property(nonatomic, assign, getter=isSearchInterfaceActive) BOOL searchInterfaceActive;
+@property(nonatomic, assign) BOOL searchPositionedAtTop;
 @property(nonatomic, assign) CGFloat keyboardBottomInset;
 @property(nonatomic, assign, getter=isUpdatingPlaceholderLayout) BOOL updatingPlaceholderLayout;
 @end
@@ -69,7 +71,7 @@ static CGFloat const kKayokoTagPlaceholderMinimumHeight = 96.0;
     _tagStore = [[KayokoTagStore alloc] initWithTagsPath:[KayokoTagStore defaultTagsPath]
                                       localizationBundle:_localizationBundle];
 
-    [self setTitle:[self localizedStringForKey:@"Tags"]];
+    [self setTitle:[self localizedStringForKey:@"Custom Tags"]];
     [self loadTags];
     [self configureNavigationItem];
     [self configureSearchController];
@@ -89,6 +91,11 @@ static CGFloat const kKayokoTagPlaceholderMinimumHeight = 96.0;
     [super viewWillAppear:animated];
     [[self navigationController] setToolbarHidden:NO animated:animated];
     [[self keyboardAvoidanceCoordinator] startObserving];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    KayokoRevealSearchOnFirstAppearance(self, self.tableView, &_searchPositionedAtTop);
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
@@ -126,13 +133,9 @@ static CGFloat const kKayokoTagPlaceholderMinimumHeight = 96.0;
     _searchController = [[UISearchController alloc] initWithSearchResultsController:nil];
     [_searchController setSearchResultsUpdater:self];
     [_searchController setDelegate:self];
-    [_searchController setObscuresBackgroundDuringPresentation:NO];
-    [_searchController setHidesNavigationBarDuringPresentation:NO];
     [[_searchController searchBar] setPlaceholder:[self localizedStringForKey:@"Search Tags…"]];
 
-    [self setDefinesPresentationContext:YES];
-    [[self navigationItem] setSearchController:_searchController];
-    [[self navigationItem] setHidesSearchBarWhenScrolling:YES];
+    KayokoConfigureSearchPresentation(self, _searchController);
 }
 
 - (void)configureTableView {

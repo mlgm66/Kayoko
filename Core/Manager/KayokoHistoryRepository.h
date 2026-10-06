@@ -62,6 +62,18 @@ forItemDictionary:(NSDictionary<NSString *, id> *)dictionary
      forItemDictionary:(NSDictionary<NSString *, id> *)dictionary
           inHistoryKey:(NSString *)historyKey
             completion:(nullable void (^)(BOOL success))completion;
+- (void)replaceImageForItemDictionary:(NSDictionary<NSString *, id> *)dictionary
+                        inHistoryKey:(NSString *)historyKey
+                       editedFileURL:(NSURL *)URL
+                          completion:(void (^)(NSDictionary<NSString *, id> *_Nullable updatedDictionary,
+                                               NSError *_Nullable error))completion;
+- (void)canRestoreImageForItemDictionary:(NSDictionary<NSString *, id> *)dictionary
+                           inHistoryKey:(NSString *)historyKey
+                             completion:(void (^)(BOOL canRestore, NSError *_Nullable error))completion;
+- (void)restoreOriginalImageForItemDictionary:(NSDictionary<NSString *, id> *)dictionary
+                                inHistoryKey:(NSString *)historyKey
+                                  completion:(void (^)(NSDictionary<NSString *, id> *_Nullable updatedDictionary,
+                                                       NSError *_Nullable error))completion;
 - (void)removeItemsFromHistoryKey:(NSString *)historyKey
                shouldRemoveImages:(BOOL)shouldRemoveImages
                        completion:(nullable void (^)(BOOL success))completion;

@@ -25,7 +25,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property(nonatomic, weak, nullable) id<KayokoWordSelectionViewControllerDelegate> delegate;
 @property(nonatomic, strong, readonly) KayokoWordSelectionView *wordSelectionView;
-@property(nonatomic, copy, readonly) NSString *name;
 @property(nonatomic, copy, nullable, readonly) NSString *sourceHistoryKey;
 @property(nonatomic, strong, nullable, readonly) KayokoPasteboardItem *sourceItem;
 @property(nonatomic, copy, readonly) NSString *selectedText;
@@ -34,11 +33,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign, readonly) BOOL hasSelectedText;
 @property(nonatomic, copy, nullable) void (^selectionChangedHandler)(void);
 
-- (instancetype)initWithName:(NSString *)name NS_DESIGNATED_INITIALIZER;
+- (instancetype)init NS_DESIGNATED_INITIALIZER;
 - (instancetype)initWithNibName:(nullable NSString *)nibNameOrNil
                          bundle:(nullable NSBundle *)nibBundleOrNil NS_UNAVAILABLE;
 - (instancetype)initWithCoder:(NSCoder *)coder NS_UNAVAILABLE;
-- (instancetype)init NS_UNAVAILABLE;
 
 - (BOOL)canShowText:(NSString *)text;
 - (void)showWordSelectionWithItem:(KayokoPasteboardItem *)item
@@ -48,6 +46,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)handleActionButtonWithAutomaticallyPaste:(BOOL)automaticallyPaste;
 - (void)setEditButtonEnabled:(BOOL)enabled;
 - (void)resetWordSelectionState;
+- (BOOL)shouldSuppressExternalHideRequest;
 - (void)updateActionButtonState;
 - (void)scrollToTopAnimated:(BOOL)animated;
 

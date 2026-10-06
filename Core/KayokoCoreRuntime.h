@@ -14,6 +14,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign, readonly) KayokoGestureRecognizerMode gestureRecognizerMode;
 @property(nonatomic, assign, readonly) BOOL pasteTipsDisabled;
 @property(nonatomic, assign, readonly) BOOL panelVisible;
+@property(nonatomic, assign, readonly) BOOL searchActive;
 @property(nonatomic, assign, readonly) BOOL fullscreenSearchActive;
 @property(nonatomic, assign, readonly) BOOL systemMultitaskingGestureSuppressed;
 

@@ -8,6 +8,7 @@
 #import "KayokoHelperRuntime.h"
 #import "KayokoNotificationKeys.h"
 #import "KayokoSceneSettingKeys.h"
+#import "../Shared/KayokoHookValidation.h"
 
 #import <AudioToolbox/AudioToolbox.h>
 #import <CaptainHook/CaptainHook.h>
@@ -66,6 +67,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, weak, nullable) UIResponder *firstResponder;
 @property(nonatomic, weak, nullable) UIResponder *keyboardInputDelegate;
 @property(nonatomic, weak, nullable) UIWindow *keyWindow;
+@property(nonatomic, weak, nullable) UIViewController *editingViewController;
 
 #pragma mark - Lifecycle
 
@@ -88,10 +90,19 @@ NS_ASSUME_NONNULL_END
     self.firstResponder = nil;
     self.keyboardInputDelegate = nil;
     self.keyWindow = nil;
+    self.editingViewController = nil;
 }
 
 - (void)finishCapturing {
     self.capturedFocusSession = self.keyboardInputDelegate || self.firstResponder;
+    self.editingViewController = nil;
+    UIResponder *responder = self.keyboardInputDelegate ?: self.firstResponder;
+    for (; responder && responder != self.keyWindow; responder = [responder nextResponder]) {
+        if ([responder isKindOfClass:[UIViewController class]] && [(UIViewController *)responder isEditing]) {
+            self.editingViewController = (UIViewController *)responder;
+            break;
+        }
+    }
 }
 
 - (BOOL)matchesKeyWindow:(UIWindow *)keyWindow {
@@ -369,34 +380,19 @@ CHOptimizedMethod0(self, void, UIKBInputBackdropView, didMoveToWindow) {
     [[KayokoHelperRuntime sharedRuntime] keyboardWindowDidMoveToWindow];
 }
 
-CHOptimizedMethod1(self, void, UIKeyboardImpl, applicationDidBecomeActive, BOOL, didBecomeActive) {
-    CHSuper1(UIKeyboardImpl, applicationDidBecomeActive, didBecomeActive);
+CHOptimizedMethod1(self, void, UIKeyboardImpl, applicationResumed, id, application) {
+    CHSuper1(UIKeyboardImpl, applicationResumed, application);
     [[KayokoHelperRuntime sharedRuntime] keyboardImplDidBecomeActive];
 }
 
-CHOptimizedMethod1(self, void, UIKeyboardImpl, applicationWillResignActive, BOOL, willResignActive) {
-    CHSuper1(UIKeyboardImpl, applicationWillResignActive, willResignActive);
+CHOptimizedMethod1(self, void, UIKeyboardImpl, applicationSuspendedEventsOnly, id, application) {
+    CHSuper1(UIKeyboardImpl, applicationSuspendedEventsOnly, application);
     [[KayokoHelperRuntime sharedRuntime] keyboardImplWillLeaveActive];
 }
 
-CHOptimizedMethod1(self, void, UIKeyboardImpl, applicationWillSuspend, BOOL, willSuspend) {
-    CHSuper1(UIKeyboardImpl, applicationWillSuspend, willSuspend);
-    [[KayokoHelperRuntime sharedRuntime] keyboardImplWillLeaveActive];
-}
-
-CHOptimizedMethod3(self, void, UIKeyboardImpl, setDelegate, id, delegate, force, BOOL, force, fromBecomeFirstResponder,
-                   BOOL, fromBecomeFirstResponder) {
-    CHSuper3(UIKeyboardImpl, setDelegate, delegate, force, force, fromBecomeFirstResponder, fromBecomeFirstResponder);
-    [[KayokoHelperRuntime sharedRuntime] keyboardImplDidSetDelegate:delegate];
-}
-
-CHOptimizedMethod2(self, void, UIKeyboardImpl, setDelegate, id, delegate, force, BOOL, force) {
-    CHSuper2(UIKeyboardImpl, setDelegate, delegate, force, force);
-    [[KayokoHelperRuntime sharedRuntime] keyboardImplDidSetDelegate:delegate];
-}
-
-CHOptimizedMethod1(self, void, UIKeyboardImpl, setDelegate, id, delegate) {
-    CHSuper1(UIKeyboardImpl, setDelegate, delegate);
+CHOptimizedMethod3(self, void, UIKeyboardImpl, setDelegate, id, delegate, force, BOOL, force, delayEndInputSession,
+                   BOOL, delayEndInputSession) {
+    CHSuper3(UIKeyboardImpl, setDelegate, delegate, force, force, delayEndInputSession, delayEndInputSession);
     [[KayokoHelperRuntime sharedRuntime] keyboardImplDidSetDelegate:delegate];
 }
 
@@ -1001,8 +997,7 @@ CHOptimizedMethod0(self, BOOL, UITextField, resignFirstResponder) {
         return NO;
     }
 
-    BOOL requiresKeyboardInputDelegate =
-        self.isSpringBoardRuntime && responder == self.focusSession.keyboardInputDelegate;
+    BOOL requiresKeyboardInputDelegate = responder == self.focusSession.keyboardInputDelegate;
     if (!requiresKeyboardInputDelegate) {
         if ([responder isFirstResponder]) {
             return YES;
@@ -1070,6 +1065,12 @@ CHOptimizedMethod0(self, BOOL, UITextField, resignFirstResponder) {
         return NO;
     }
 
+    UIViewController *editingViewController = self.focusSession.editingViewController;
+    if (editingViewController && ![editingViewController isEditing] &&
+        [[editingViewController viewIfLoaded] window] == keyWindow) {
+        [editingViewController setEditing:YES animated:NO];
+    }
+
     if ([self restoreResponder:self.focusSession.keyboardInputDelegate]) {
         return YES;
     }
@@ -1133,13 +1134,11 @@ CHOptimizedMethod0(self, BOOL, UITextField, resignFirstResponder) {
         return NO;
     }
 
-#if DEBUG
     BOOL didSendAction = [activeApplication sendAction:@selector(paste:) to:responder from:nil forEvent:nil];
     HBLogDebug(@"Kayoko: paste into Kayoko responder sent=%@ responder=%@", didSendAction ? @"YES" : @"NO",
                responder ? NSStringFromClass([responder class]) : @"nil");
-#endif
 
-    return YES;
+    return didSendAction;
 }
 
 - (BOOL)performPaste {
@@ -1404,26 +1403,26 @@ CHOptimizedMethod0(self, BOOL, UITextField, resignFirstResponder) {
 - (void)installRuntimeHooks {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-      CHLoadClass_(&UIKeyboardLayoutStar$, NSClassFromString(@"UIKeyboardLayoutStar"));
-      CHHook0(UIKeyboardLayoutStar, didMoveToWindow);
-      CHLoadClass_(&UIKBInputBackdropView$, NSClassFromString(@"UIKBInputBackdropView"));
-      CHHook0(UIKBInputBackdropView, didMoveToWindow);
-      CHLoadClass_(&UIKeyboardImpl$, NSClassFromString(@"UIKeyboardImpl"));
-      CHHook1(UIKeyboardImpl, applicationDidBecomeActive);
-      CHHook1(UIKeyboardImpl, applicationWillResignActive);
-      CHHook1(UIKeyboardImpl, applicationWillSuspend);
+      Class layoutClass = NSClassFromString(@"UIKeyboardLayoutStar");
+      if (KayokoHookMethodMatches(layoutClass, @selector(didMoveToWindow), "v@:")) {
+          CHLoadClass_(&UIKeyboardLayoutStar$, layoutClass);
+          CHHook0(UIKeyboardLayoutStar, didMoveToWindow);
+      }
+      Class backdropClass = NSClassFromString(@"UIKBInputBackdropView");
+      if (KayokoHookMethodMatches(backdropClass, @selector(didMoveToWindow), "v@:")) {
+          CHLoadClass_(&UIKBInputBackdropView$, backdropClass);
+          CHHook0(UIKBInputBackdropView, didMoveToWindow);
+      }
       Class keyboardImplClass = NSClassFromString(@"UIKeyboardImpl");
-      if (class_getInstanceMethod(keyboardImplClass, @selector(setDelegate:force:fromBecomeFirstResponder:))) {
-          CHHook3(UIKeyboardImpl, setDelegate, force, fromBecomeFirstResponder);
-          HBLogDebug(@"Kayoko: installed UIKeyboardImpl setDelegate:force:fromBecomeFirstResponder: hook");
-      } else if (class_getInstanceMethod(keyboardImplClass, @selector(setDelegate:force:))) {
-          CHHook2(UIKeyboardImpl, setDelegate, force);
-          HBLogDebug(@"Kayoko: installed UIKeyboardImpl setDelegate:force: hook");
-      } else if (class_getInstanceMethod(keyboardImplClass, @selector(setDelegate:))) {
-          CHHook1(UIKeyboardImpl, setDelegate);
-          HBLogDebug(@"Kayoko: installed UIKeyboardImpl setDelegate: hook");
-      } else {
-          HBLogDebug(@"Kayoko: unable to install UIKeyboardImpl setDelegate hook");
+      CHLoadClass_(&UIKeyboardImpl$, keyboardImplClass);
+      if (KayokoHookMethodMatches(keyboardImplClass, @selector(applicationResumed:), "v@:@")) {
+          CHHook1(UIKeyboardImpl, applicationResumed);
+      }
+      if (KayokoHookMethodMatches(keyboardImplClass, @selector(applicationSuspendedEventsOnly:), "v@:@")) {
+          CHHook1(UIKeyboardImpl, applicationSuspendedEventsOnly);
+      }
+      if (KayokoHookMethodMatches(keyboardImplClass, @selector(setDelegate:force:delayEndInputSession:), "v@:@BB")) {
+          CHHook3(UIKeyboardImpl, setDelegate, force, delayEndInputSession);
       }
     });
 }
@@ -1431,8 +1430,11 @@ CHOptimizedMethod0(self, BOOL, UITextField, resignFirstResponder) {
 - (void)installSceneClientSettingsHooks {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-      CHLoadClass_(&FBSScene$, NSClassFromString(@"FBSScene"));
-      CHHook1(FBSScene, updateClientSettingsWithBlock);
+      Class sceneClass = NSClassFromString(@"FBSScene");
+      if (KayokoHookMethodMatches(sceneClass, @selector(updateClientSettingsWithBlock:), "v@:@?")) {
+          CHLoadClass_(&FBSScene$, sceneClass);
+          CHHook1(FBSScene, updateClientSettingsWithBlock);
+      }
     });
 }
 
@@ -1440,9 +1442,13 @@ CHOptimizedMethod0(self, BOOL, UITextField, resignFirstResponder) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
       CHLoadClass(UISearchBar);
-      CHHook0(UISearchBar, resignFirstResponder);
+      if (KayokoHookMethodMatches(CHClass(UISearchBar), @selector(resignFirstResponder), "B@:")) {
+          CHHook0(UISearchBar, resignFirstResponder);
+      }
       CHLoadClass(UITextField);
-      CHHook0(UITextField, resignFirstResponder);
+      if (KayokoHookMethodMatches(CHClass(UITextField), @selector(resignFirstResponder), "B@:")) {
+          CHHook0(UITextField, resignFirstResponder);
+      }
     });
 }
 

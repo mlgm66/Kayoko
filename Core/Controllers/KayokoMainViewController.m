@@ -10,6 +10,7 @@
 #import "KayokoExternalHideCoordinator.h"
 #import "KayokoHeaderButtonStyle.h"
 #import "KayokoHeaderView.h"
+#import "KayokoHistoryItemActionHandler.h"
 #import "KayokoHistoryController.h"
 #import "KayokoHistoryListView.h"
 #import "KayokoHistoryListViewController.h"
@@ -227,6 +228,8 @@ NS_ASSUME_NONNULL_END
         [[previewHeaderView trailingButton] addTarget:self
                                                action:@selector(handlePreviewActionButtonPressed)
                                      forControlEvents:UIControlEventTouchUpInside];
+        [[previewHeaderView openLinkButton] addTarget:self
+            action:@selector(handleOpenLinkButtonPressed) forControlEvents:UIControlEventTouchUpInside];
         [[previewHeaderView titleTapControl] addTarget:self
                                                 action:@selector(handleTitleTapControlPressed)
                                       forControlEvents:UIControlEventTouchUpInside];
@@ -244,10 +247,7 @@ NS_ASSUME_NONNULL_END
                                                  action:@selector(handleTransientBackButtonPressed)
                                        forControlEvents:UIControlEventTouchUpInside];
 
-        _wordSelectionViewController = [[KayokoWordSelectionViewController alloc]
-            initWithName:[[KayokoPasteboardManager localizationBundle] localizedStringForKey:@"Preview"
-                                                                                       value:nil
-                                                                                       table:@"Tweak"]];
+        _wordSelectionViewController = [[KayokoWordSelectionViewController alloc] init];
         [_wordSelectionViewController setDelegate:self];
         [self addChildViewController:_wordSelectionViewController];
         KayokoHeaderView *wordSelectionHeaderView = [[_wordSelectionViewController wordSelectionView] headerView];
@@ -262,6 +262,8 @@ NS_ASSUME_NONNULL_END
         [[wordSelectionHeaderView trailingButton] addTarget:self
                                                      action:@selector(handlePreviewActionButtonPressed)
                                            forControlEvents:UIControlEventTouchUpInside];
+        [[wordSelectionHeaderView openLinkButton] addTarget:self
+            action:@selector(handleOpenLinkButtonPressed) forControlEvents:UIControlEventTouchUpInside];
         [[wordSelectionHeaderView titleTapControl] addTarget:self
                                                       action:@selector(handleTitleTapControlPressed)
                                             forControlEvents:UIControlEventTouchUpInside];
@@ -438,6 +440,7 @@ NS_ASSUME_NONNULL_END
 
 - (void)executePendingExternalHideRequestIfReady {
     if ([[self externalHideCoordinator] shouldSuppressExternalHide] ||
+        [[self previewViewController] shouldSuppressExternalHideRequest] ||
         [self externalHideRequestShouldWaitForAnimations]) {
         return;
     }
@@ -1700,14 +1703,36 @@ NS_ASSUME_NONNULL_END
     }
 
     if (![[[self previewViewController] previewView] isHidden]) {
+        BOOL savesImage = [[[[self previewViewController] previewItem] imageName] length] > 0;
         [[self previewViewController] handleActionButtonWithCompletion:^(BOOL success) {
           if (success) {
+              if (savesImage && ([self isDismissingPanel] || [[self mainView] isAnimating] ||
+                                [[self panelPresentationController] isAnimating])) {
+                  return;
+              }
               [[self panelPresentationController] triggerHapticFeedbackWithStyle:UIImpactFeedbackStyleMedium];
               [[self panelPresentationController] prepareStandardDismissAnimation];
               [self hideAfterDirectPaste];
           }
         }];
     }
+}
+
+- (void)handleOpenLinkButtonPressed {
+    KayokoPasteboardItem *item = [self isWordSelectionActive] ? [[self wordSelectionViewController] sourceItem] :
+        ([self isPreviewActive] ? [[self previewViewController] previewItem] : nil);
+    if (![item hasLink]) return;
+    __weak typeof(self) weakSelf = self;
+    [[[KayokoHistoryItemActionHandler alloc] init] openLinkForItem:item completion:^(BOOL success) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!success || !strongSelf || [strongSelf isHidden] || [strongSelf isDismissingPanel]) return;
+        KayokoPasteboardItem *currentItem = [strongSelf isWordSelectionActive] ?
+            [[strongSelf wordSelectionViewController] sourceItem] : [[strongSelf previewViewController] previewItem];
+        if (currentItem != item) return;
+        [[strongSelf panelPresentationController] triggerHapticFeedbackWithStyle:UIImpactFeedbackStyleMedium];
+        [[strongSelf panelPresentationController] prepareStandardDismissAnimation];
+        [strongSelf hideAfterDirectPaste];
+    }];
 }
 
 - (void)handleClearButtonPressed {
@@ -2169,8 +2194,13 @@ NS_ASSUME_NONNULL_END
 
     KayokoPasteboardItem *item = [controller previewItem];
     NSString *historyKey = [controller sourceHistoryKey];
-    if (!item || [historyKey length] == 0 || [[item imageName] length] > 0) {
+    if (!item || [historyKey length] == 0) {
         [[self previewViewController] setEditButtonEnabled:YES];
+        return;
+    }
+    if ([[item imageName] length] > 0) {
+        [self clearExternalHideCoordinator];
+        [controller beginImageEditing];
         return;
     }
 
@@ -2183,6 +2213,12 @@ NS_ASSUME_NONNULL_END
     [[self textEditorViewController] beginEditingItem:item
                                      sourceHistoryKey:historyKey
                                      replacementRange:NSMakeRange(NSNotFound, 0)];
+}
+
+- (void)previewViewControllerDidFinishImageEditing:(KayokoPreviewViewController *)controller {
+    if (controller == [self previewViewController] && ![self isHidden] && ![self isDismissingPanel]) {
+        [[self delegate] mainViewControllerDidFinishImageEditing:self];
+    }
 }
 
 - (void)textEditorViewControllerDidBeginEditing:(KayokoTextEditorViewController *)controller {
@@ -2759,6 +2795,7 @@ NS_ASSUME_NONNULL_END
     [self setDismissingPanel:NO];
     [self setPreparingToShow:YES];
     [[KayokoTagCatalog sharedCatalog] reloadTags];
+    [[self searchController] reloadFilterOrder];
     NSUInteger showRequestIdentifier = [self showRequestIdentifier] + 1;
     [self setShowRequestIdentifier:showRequestIdentifier];
     [self resetClearConfirmationIfNeeded];
@@ -2842,10 +2879,10 @@ NS_ASSUME_NONNULL_END
     if ([self alwaysScrollToTop]) {
         [[self historyController] markAllHistoryKeysForScrollToTopBeforeNextDisplay];
     }
+    [[self delegate] mainViewControllerDidHide:self];
     if (completion) {
         completion();
     }
-    [[self delegate] mainViewControllerDidHide:self];
 }
 
 - (void)hideWithCompletion:(void (^)(void))completion {
@@ -2859,6 +2896,7 @@ NS_ASSUME_NONNULL_END
     if ([[self panelPresentationController] isAnimating]) {
         return;
     }
+    [[self previewViewController] dismissImageEditing];
 
     [self dismissLeadingButtonMenu];
 
@@ -2884,6 +2922,11 @@ NS_ASSUME_NONNULL_END
         return;
     }
 
+    if ([[self wordSelectionViewController] shouldSuppressExternalHideRequest] ||
+        [[self previewViewController] shouldSuppressExternalHideRequest]) {
+        return;
+    }
+
     if ([self isEditingAnyContent]) {
         return;
     }
@@ -2904,6 +2947,7 @@ NS_ASSUME_NONNULL_END
 - (void)hideImmediately {
     [self setShowRequestIdentifier:[self showRequestIdentifier] + 1];
     [self setPreparingToShow:NO];
+    [[self previewViewController] dismissImageEditing];
 
     if ([self isHidden]) {
         return;

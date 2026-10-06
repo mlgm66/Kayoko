@@ -8,6 +8,7 @@
 #import "KayokoHelperHookInstaller.h"
 #import "KayokoHelperRuntime.h"
 #import "KayokoSwipeUpGestureRecognizer.h"
+#import "../Shared/KayokoHookValidation.h"
 
 #import <CaptainHook/CaptainHook.h>
 #import <HBLog.h>
@@ -119,7 +120,9 @@ NS_ASSUME_NONNULL_END
 #pragma mark - Actions
 
 - (void)handleSwipeUpGesture:(UIGestureRecognizer *)recognizer {
-    if (recognizer.state != UIGestureRecognizerStateRecognized) {
+    UIView *view = self.view;
+    if (!view || recognizer != objc_getAssociatedObject(view, &kayokoSwipeUpGestureRecognizerKey) ||
+        recognizer.state != UIGestureRecognizerStateRecognized) {
         return;
     }
 
@@ -210,6 +213,8 @@ CHOptimizedMethod1(self, void, _UIHostedWindow, sendEvent, UIEvent *, event) {
 
     if (kayokoKeyboardExtensionSwipeUpSpotlightOnly &&
         ![kayokoKeyboardExtensionHostApplicationBundleIdentifier isEqualToString:kKayokoSpotlightBundleIdentifier]) {
+        kayokoSetManualSwipeUpActive(self, NO);
+        kayokoDiscardSwipeUpGestureRecognizer(self);
         CHSuper1(_UIHostedWindow, sendEvent, event);
         return;
     }
@@ -270,7 +275,9 @@ CHOptimizedMethod1(self, void, _UIHostedWindow, sendEvent, UIEvent *, event) {
     if (endedTouches.count > 0) {
         [recognizer touchesEnded:endedTouches withEvent:event];
         kayokoSetManualSwipeUpActive(self, NO);
-        kayokoDiscardSwipeUpGestureRecognizer(self);
+        if (recognizer.state != UIGestureRecognizerStateRecognized) {
+            kayokoDiscardSwipeUpGestureRecognizer(self);
+        }
     }
 
     NSSet<UITouch *> *cancelledTouches = kayokoTouchesForWindowWithPhase(self, event, UITouchPhaseCancelled);
@@ -286,17 +293,16 @@ CHOptimizedMethod1(self, void, _UIHostedWindow, sendEvent, UIEvent *, event) {
 CHOptimizedMethod1(self, void, UIViewController, _setHostApplicationBundleIdentifier, NSString *, bundleIdentifier) {
     CHSuper1(UIViewController, _setHostApplicationBundleIdentifier, bundleIdentifier);
 
-    if (![bundleIdentifier isKindOfClass:[NSString class]]) {
+    kayokoKeyboardExtensionHostApplicationBundleIdentifier =
+        [bundleIdentifier isKindOfClass:[NSString class]] ? [bundleIdentifier copy] : nil;
+    NSString *hostBundleIdentifier = kayokoKeyboardExtensionHostApplicationBundleIdentifier;
+    if (kayokoLoggedKeyboardExtensionHostApplicationBundleIdentifier == hostBundleIdentifier ||
+        [kayokoLoggedKeyboardExtensionHostApplicationBundleIdentifier isEqualToString:hostBundleIdentifier]) {
         return;
     }
 
-    kayokoKeyboardExtensionHostApplicationBundleIdentifier = [bundleIdentifier copy];
-    if ([kayokoLoggedKeyboardExtensionHostApplicationBundleIdentifier isEqualToString:bundleIdentifier]) {
-        return;
-    }
-
-    kayokoLoggedKeyboardExtensionHostApplicationBundleIdentifier = [bundleIdentifier copy];
-    HBLogDebug(@"Kayoko: keyboard extension host application bundle identifier=%@", bundleIdentifier);
+    kayokoLoggedKeyboardExtensionHostApplicationBundleIdentifier = [hostBundleIdentifier copy];
+    HBLogDebug(@"Kayoko: keyboard extension host application bundle identifier=%@", hostBundleIdentifier);
 }
 
 #pragma mark - Keyboard Host Hooks
@@ -318,8 +324,11 @@ CHOptimizedMethod0(self, void, UIInputSetHostView, didMoveToWindow) {
 + (void)installSwipeUpHooks {
     static dispatch_once_t sOnceToken;
     dispatch_once(&sOnceToken, ^{
-      CHLoadClass_(&UIInputSetHostView$, NSClassFromString(@"UIInputSetHostView"));
-
+      Class hostClass = NSClassFromString(@"UIInputSetHostView");
+      if (!KayokoHookMethodMatches(hostClass, @selector(didMoveToWindow), "v@:")) {
+          return;
+      }
+      CHLoadClass_(&UIInputSetHostView$, hostClass);
       CHHook0(UIInputSetHostView, didMoveToWindow);
     });
 }
@@ -329,12 +338,15 @@ CHOptimizedMethod0(self, void, UIInputSetHostView, didMoveToWindow) {
     kayokoKeyboardExtensionSwipeUpSpotlightOnly = spotlightOnly;
     dispatch_once(&sOnceToken, ^{
       CHLoadClass(UIViewController);
-      if ([CHClass(UIViewController) instancesRespondToSelector:@selector(_setHostApplicationBundleIdentifier:)]) {
+      if (KayokoHookMethodMatches(CHClass(UIViewController), @selector(_setHostApplicationBundleIdentifier:), "v@:@")) {
           CHHook1(UIViewController, _setHostApplicationBundleIdentifier);
       }
 
-      CHLoadClass_(&_UIHostedWindow$, NSClassFromString(@"_UIHostedWindow"));
-
+      Class windowClass = NSClassFromString(@"_UIHostedWindow");
+      if (!KayokoHookMethodMatches(windowClass, @selector(sendEvent:), "v@:@")) {
+          return;
+      }
+      CHLoadClass_(&_UIHostedWindow$, windowClass);
       CHHook1(_UIHostedWindow, sendEvent);
     });
 }

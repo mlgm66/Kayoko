@@ -7,6 +7,7 @@
 
 #import "KayokoHelperHookInstaller.h"
 #import "KayokoHelperRuntime.h"
+#import "../Shared/KayokoHookValidation.h"
 
 #import <CaptainHook/CaptainHook.h>
 #import <UIKit/UIKit.h>
@@ -44,16 +45,7 @@ static void kayokoOpenKayokoResponderAction(id self, SEL _cmd) {
 CHOptimizedMethod2(self, void, _UIEditMenuPresentation, displayMenu, UIMenu *, menu, configuration, id, configuration) {
     NSMutableArray<UIMenuElement *> *build = [NSMutableArray new];
     for (id item in [menu children]) {
-        BOOL itemIsKayokoMenuItem = NO;
-        if ([item isKindOfClass:[UIMenu class]]) {
-            itemIsKayokoMenuItem = [[(UIMenu *)item title] isEqualToString:kKayokoMenuName];
-        } else if ([item isKindOfClass:[UIAction class]]) {
-            itemIsKayokoMenuItem = [[(UIAction *)item title] isEqualToString:kKayokoMenuName];
-        } else if ([item isKindOfClass:[UICommand class]]) {
-            NSString *selectorName = NSStringFromSelector([(UICommand *)item action]);
-            itemIsKayokoMenuItem = [selectorName isEqualToString:kKayokoMenuActionSelectorName];
-        }
-        if (itemIsKayokoMenuItem) {
+        if ([item isKindOfClass:[UICommand class]] && [(UICommand *)item action] == kayokoMenuActionSelector()) {
             continue;
         }
         if (![item isKindOfClass:[UIMenu class]]) {
@@ -65,7 +57,14 @@ CHOptimizedMethod2(self, void, _UIEditMenuPresentation, displayMenu, UIMenu *, m
             [build addObject:submenu];
             continue;
         }
-        NSMutableArray<UIMenuElement *> *rebuildAppleEditMenu = [submenu.children mutableCopy];
+        NSMutableArray<UIMenuElement *> *rebuildAppleEditMenu = [NSMutableArray array];
+        for (UIMenuElement *child in submenu.children) {
+            if ([child isKindOfClass:[UICommand class]] &&
+                [(UICommand *)child action] == kayokoMenuActionSelector()) {
+                continue;
+            }
+            [rebuildAppleEditMenu addObject:child];
+        }
         static UICommand *kayokoMenuCommand = nil;
         if (!kayokoMenuCommand) {
             kayokoMenuCommand = [UICommand commandWithTitle:kKayokoMenuName
@@ -161,10 +160,18 @@ CHOptimizedMethod0(self, void, UICalloutBar, updateAvailableButtons) {
           if (!targetCls) {
               targetCls = NSClassFromString(@"_UIEditMenuPresentation");
           }
+          if (!KayokoHookMethodMatches(targetCls, @selector(displayMenu:configuration:), "v@:@@")) {
+              return;
+          }
           CHLoadClass_(&_UIEditMenuPresentation$, targetCls);
           CHHook2(_UIEditMenuPresentation, displayMenu, configuration);
       } else {
-          CHLoadClass_(&UICalloutBar$, NSClassFromString(@"UICalloutBar"));
+          Class calloutClass = NSClassFromString(@"UICalloutBar");
+          if (!KayokoHookMethodMatches(calloutClass, @selector(setExtraItems:), "v@:@") ||
+              !KayokoHookMethodMatches(calloutClass, @selector(updateAvailableButtons), "v@:")) {
+              return;
+          }
+          CHLoadClass_(&UICalloutBar$, calloutClass);
           CHHook1(UICalloutBar, setExtraItems);
           CHHook0(UICalloutBar, updateAvailableButtons);
       }

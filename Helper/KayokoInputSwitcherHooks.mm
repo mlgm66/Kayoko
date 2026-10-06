@@ -8,16 +8,19 @@
 #import "KayokoHelperHookInstaller.h"
 #import "KayokoHelperLocalization.h"
 #import "KayokoHelperRuntime.h"
+#import "../Shared/KayokoHookValidation.h"
 
 #import <CaptainHook/CaptainHook.h>
 #import <UIKit/UIKit.h>
-#import <substrate.h>
 
 static NSString *const kKayokoInputSwitcherItemIdentifier = @"com.mlgm.kayoko.globe";
+static Ivar kayokoInputSwitcherItemsIvar;
 
 CHDeclareClass(UIInputSwitcherView);
 
 @interface UIInputSwitcherView : UIView
+- (BOOL)isForDictation;
+- (void)hide;
 @end
 
 @interface UIInputSwitcherItem : NSObject
@@ -35,26 +38,42 @@ CHDeclareClass(UIInputSwitcherView);
 
 CHOptimizedMethod0(self, void, UIInputSwitcherView, _reloadInputSwitcherItems) {
     CHSuper0(UIInputSwitcherView, _reloadInputSwitcherItems);
-    BOOL isForDictation = MSHookIvar<BOOL>(self, "m_isForDictation");
-    if (isForDictation) {
+    if ([self isForDictation]) {
         return;
     }
-    NSArray *items = MSHookIvar<NSArray *>(self, "m_inputSwitcherItems");
+    NSArray *items = object_getIvar(self, kayokoInputSwitcherItemsIvar);
+    if (![items isKindOfClass:[NSArray class]]) {
+        return;
+    }
+    for (UIInputSwitcherItem *existingItem in items) {
+        if ([existingItem isKindOfClass:NSClassFromString(@"UIInputSwitcherItem")] &&
+            [existingItem.identifier isEqualToString:kKayokoInputSwitcherItemIdentifier]) {
+            return;
+        }
+    }
     NSMutableArray *newItems = [NSMutableArray arrayWithArray:items];
     UIInputSwitcherItem *item =
         [[NSClassFromString(@"UIInputSwitcherItem") alloc] initWithIdentifier:kKayokoInputSwitcherItemIdentifier];
     [item setLocalizedTitle:KayokoHelperLocalizedString(@"Kayoko")];
     if (item) {
-        [newItems insertObject:item atIndex:newItems.count - 1];
+        [newItems insertObject:item atIndex:newItems.count ? newItems.count - 1 : 0];
+        object_setIvar(self, kayokoInputSwitcherItemsIvar, newItems);
     }
-    MSHookIvar<NSArray *>(self, "m_inputSwitcherItems") = newItems;
 }
 
 CHOptimizedMethod1(self, void, UIInputSwitcherView, didSelectItemAtIndex, unsigned long long, index) {
-    NSArray *items = MSHookIvar<NSArray *>(self, "m_inputSwitcherItems");
-    UIInputSwitcherItem *item = items[index];
-    if ([item.identifier isEqualToString:kKayokoInputSwitcherItemIdentifier]) {
-        [[KayokoHelperRuntime sharedRuntime] activateKayokoAfterCapturingCurrentFocus];
+    NSArray *items = object_getIvar(self, kayokoInputSwitcherItemsIvar);
+    if ([items isKindOfClass:[NSArray class]]) {
+        if (index >= items.count) {
+            return;
+        }
+        UIInputSwitcherItem *item = items[index];
+        if ([item isKindOfClass:NSClassFromString(@"UIInputSwitcherItem")] &&
+            [item.identifier isEqualToString:kKayokoInputSwitcherItemIdentifier]) {
+            [self hide];
+            [[KayokoHelperRuntime sharedRuntime] activateKayokoAfterCapturingCurrentFocus];
+            return;
+        }
     }
     CHSuper1(UIInputSwitcherView, didSelectItemAtIndex, index);
 }
@@ -64,7 +83,21 @@ CHOptimizedMethod1(self, void, UIInputSwitcherView, didSelectItemAtIndex, unsign
 + (void)installInputSwitcherHooks {
     static dispatch_once_t sOnceToken;
     dispatch_once(&sOnceToken, ^{
-      CHLoadClass_(&UIInputSwitcherView$, NSClassFromString(@"UIInputSwitcherView"));
+      Class viewClass = NSClassFromString(@"UIInputSwitcherView");
+      Class itemClass = NSClassFromString(@"UIInputSwitcherItem");
+      Ivar itemsIvar = class_getInstanceVariable(viewClass, "m_inputSwitcherItems");
+      if (!itemsIvar || ivar_getTypeEncoding(itemsIvar)[0] != '@' ||
+          !KayokoHookMethodMatches(viewClass, @selector(isForDictation), "B@:") ||
+          !KayokoHookMethodMatches(viewClass, @selector(hide), "v@:") ||
+          !KayokoHookMethodMatches(viewClass, @selector(_reloadInputSwitcherItems), "v@:") ||
+          !KayokoHookMethodMatches(viewClass, @selector(didSelectItemAtIndex:), "v@:Q") ||
+          !KayokoHookMethodMatches(itemClass, @selector(initWithIdentifier:), "@@:@") ||
+          !KayokoHookMethodMatches(itemClass, @selector(identifier), "@@:") ||
+          !KayokoHookMethodMatches(itemClass, @selector(setLocalizedTitle:), "v@:@")) {
+          return;
+      }
+      kayokoInputSwitcherItemsIvar = itemsIvar;
+      CHLoadClass_(&UIInputSwitcherView$, viewClass);
 
       CHHook0(UIInputSwitcherView, _reloadInputSwitcherItems);
       CHHook1(UIInputSwitcherView, didSelectItemAtIndex);

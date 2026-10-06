@@ -15,6 +15,7 @@
 #import "KayokoNotificationKeys.h"
 #import "KayokoPreferenceKeys.h"
 #import "KayokoSpringBoardHooks.h"
+#import "../Shared/KayokoHookValidation.h"
 #import "KayokoSwipeUpGestureRecognizer.h"
 
 CHDeclareClass(SpringBoard);
@@ -573,7 +574,7 @@ CHOptimizedMethod3(self, void, FBScene, updateSettings, UIApplicationSceneSettin
 + (void)installStatusBarHooks {
     Class windowSceneClass = NSClassFromString(@"UIWindowScene");
     SEL windowDidBecomeVisibleSelector = @selector(_delegate_windowDidBecomeVisible:);
-    if (windowSceneClass && [windowSceneClass instancesRespondToSelector:windowDidBecomeVisibleSelector]) {
+    if (KayokoHookMethodMatches(windowSceneClass, windowDidBecomeVisibleSelector, "v@:@")) {
         CHLoadClass_(&UIWindowScene$, windowSceneClass);
         CHHook1(UIWindowScene, _delegate_windowDidBecomeVisible);
         return;
@@ -590,7 +591,7 @@ CHOptimizedMethod3(self, void, FBScene, updateSettings, UIApplicationSceneSettin
     if (@available(iOS 15.0, *)) {
     } else {
         CHLoadClass_(&UIStatusBarWindow$, statusBarWindowClass);
-        if ([statusBarWindowClass instancesRespondToSelector:@selector(initWithFrame:)]) {
+        if (KayokoHookMethodMatches(statusBarWindowClass, @selector(initWithFrame:), "@@:{CGRect={CGPoint=dd}{CGSize=dd}}")) {
             CHHook1(UIStatusBarWindow, initWithFrame);
         }
     }
@@ -600,14 +601,14 @@ CHOptimizedMethod3(self, void, FBScene, updateSettings, UIApplicationSceneSettin
     Class iconControllerClass = NSClassFromString(@"SBIconController");
     CHLoadClass(UIViewController);
     SEL viewWillAppearSelector = @selector(viewWillAppear:);
-    if (iconControllerClass && [CHClass(UIViewController) instancesRespondToSelector:viewWillAppearSelector]) {
+    if (iconControllerClass && KayokoHookMethodMatches(CHClass(UIViewController), viewWillAppearSelector, "v@:B")) {
         CHHook1(UIViewController, viewWillAppear);
     }
 
     Class iconManagerClass = NSClassFromString(@"SBHIconManager");
     CHLoadClass_(&SBHIconManager$, iconManagerClass);
     SEL rootFolderWillAppearSelector = @selector(rootFolderControllerViewWillAppear:);
-    if ([iconManagerClass instancesRespondToSelector:rootFolderWillAppearSelector]) {
+    if (KayokoHookMethodMatches(iconManagerClass, rootFolderWillAppearSelector, "v@:@")) {
         CHHook1(SBHIconManager, rootFolderControllerViewWillAppear);
     }
 }
@@ -616,7 +617,7 @@ CHOptimizedMethod3(self, void, FBScene, updateSettings, UIApplicationSceneSettin
     Class coverSheetClass = NSClassFromString(@"SBCoverSheetPrimarySlidingViewController");
     CHLoadClass_(&SBCoverSheetPrimarySlidingViewController$, coverSheetClass);
     SEL transitionEndSelector = @selector(_endTransitionToAppeared:);
-    if ([coverSheetClass instancesRespondToSelector:transitionEndSelector]) {
+    if (KayokoHookMethodMatches(coverSheetClass, transitionEndSelector, "v@:B")) {
         CHHook1(SBCoverSheetPrimarySlidingViewController, _endTransitionToAppeared);
     }
 }
@@ -625,7 +626,7 @@ CHOptimizedMethod3(self, void, FBScene, updateSettings, UIApplicationSceneSettin
     Class spotlightClass = NSClassFromString(@"SBSpotlightMultiplexingViewController");
     CHLoadClass_(&SBSpotlightMultiplexingViewController$, spotlightClass);
     SEL viewWillDisappearSelector = @selector(viewWillDisappear:);
-    if ([spotlightClass instancesRespondToSelector:viewWillDisappearSelector]) {
+    if (KayokoHookMethodMatches(spotlightClass, viewWillDisappearSelector, "v@:B")) {
         CHHook1(SBSpotlightMultiplexingViewController, viewWillDisappear);
     }
 }
@@ -634,7 +635,7 @@ CHOptimizedMethod3(self, void, FBScene, updateSettings, UIApplicationSceneSettin
     Class librarySearchControllerClass = NSClassFromString(@"SBHLibrarySearchController");
     CHLoadClass_(&SBHLibrarySearchController$, librarySearchControllerClass);
     SEL willDismissSearchSelector = @selector(_willDismissSearchAnimated:);
-    if ([librarySearchControllerClass instancesRespondToSelector:willDismissSearchSelector]) {
+    if (KayokoHookMethodMatches(librarySearchControllerClass, willDismissSearchSelector, "v@:B")) {
         CHHook1(SBHLibrarySearchController, _willDismissSearchAnimated);
     }
 }
@@ -646,19 +647,19 @@ CHOptimizedMethod3(self, void, FBScene, updateSettings, UIApplicationSceneSettin
     }
 
     CHLoadClass_(&SBApplicationController$, applicationControllerClass);
-    if ([applicationControllerClass instancesRespondToSelector:@selector(applicationsAdded:)]) {
+    if (KayokoHookMethodMatches(applicationControllerClass, @selector(applicationsAdded:), "v@:@")) {
         CHHook1(SBApplicationController, applicationsAdded);
     }
-    if ([applicationControllerClass instancesRespondToSelector:@selector(applicationsDemoted:)]) {
+    if (KayokoHookMethodMatches(applicationControllerClass, @selector(applicationsDemoted:), "v@:@")) {
         CHHook1(SBApplicationController, applicationsDemoted);
     }
-    if ([applicationControllerClass instancesRespondToSelector:@selector(applicationsRemoved:)]) {
+    if (KayokoHookMethodMatches(applicationControllerClass, @selector(applicationsRemoved:), "v@:@")) {
         CHHook1(SBApplicationController, applicationsRemoved);
     }
-    if ([applicationControllerClass instancesRespondToSelector:@selector(applicationsReplaced:)]) {
+    if (KayokoHookMethodMatches(applicationControllerClass, @selector(applicationsReplaced:), "v@:@")) {
         CHHook1(SBApplicationController, applicationsReplaced);
     }
-    if ([applicationControllerClass instancesRespondToSelector:@selector(applicationsUpdated:)]) {
+    if (KayokoHookMethodMatches(applicationControllerClass, @selector(applicationsUpdated:), "v@:@")) {
         CHHook1(SBApplicationController, applicationsUpdated);
     }
 }
@@ -676,7 +677,7 @@ CHOptimizedMethod3(self, void, FBScene, updateSettings, UIApplicationSceneSettin
 + (void)installSceneSettingsHooks {
     Class sceneClass = NSClassFromString(@"FBScene");
     SEL updateSettingsSelector = @selector(updateSettings:withTransitionContext:completion:);
-    if (![sceneClass instancesRespondToSelector:updateSettingsSelector]) {
+    if (!KayokoHookMethodMatches(sceneClass, updateSettingsSelector, "v@:@@@?")) {
         return;
     }
 
@@ -688,7 +689,7 @@ CHOptimizedMethod3(self, void, FBScene, updateSettings, UIApplicationSceneSettin
     Class gestureManagerClass = NSClassFromString(@"SBMainDisplaySystemGestureManager");
     CHLoadClass_(&SBMainDisplaySystemGestureManager$, gestureManagerClass);
     SEL gestureAllowedSelector = @selector(_isGestureWithTypeAllowed:);
-    if ([gestureManagerClass instancesRespondToSelector:gestureAllowedSelector]) {
+    if (KayokoHookMethodMatches(gestureManagerClass, gestureAllowedSelector, "B@:q")) {
         CHHook1(SBMainDisplaySystemGestureManager, _isGestureWithTypeAllowed);
     }
 }
@@ -697,7 +698,8 @@ CHOptimizedMethod3(self, void, FBScene, updateSettings, UIApplicationSceneSettin
     static dispatch_once_t sOnceToken;
     dispatch_once(&sOnceToken, ^{
       Class windowClass = NSClassFromString(@"_UISystemGestureWindow");
-      if (![windowClass instancesRespondToSelector:@selector(sendEvent:)]) {
+      if (!KayokoHookMethodMatches(windowClass, @selector(sendEvent:), "v@:@") ||
+          !KayokoHookMethodMatches(windowClass, @selector(_systemGestureView), "@@:")) {
           return;
       }
 
@@ -712,21 +714,21 @@ CHOptimizedMethod3(self, void, FBScene, updateSettings, UIApplicationSceneSettin
 
     Class switcherViewControllerClass = NSClassFromString(@"SBMainSwitcherViewController");
     CHLoadClass_(&SBMainSwitcherViewController$, switcherViewControllerClass);
-    if ([switcherViewControllerClass instancesRespondToSelector:transitionBeginSelector]) {
+    if (KayokoHookMethodMatches(switcherViewControllerClass, transitionBeginSelector, "v@:@@")) {
         CHHook2(SBMainSwitcherViewController, layoutStateTransitionCoordinator,
                 transitionDidBeginWithTransitionContext);
     }
-    if ([switcherViewControllerClass instancesRespondToSelector:transitionEndSelector]) {
+    if (KayokoHookMethodMatches(switcherViewControllerClass, transitionEndSelector, "v@:@@")) {
         CHHook2(SBMainSwitcherViewController, layoutStateTransitionCoordinator, transitionDidEndWithTransitionContext);
     }
 
     Class switcherCoordinatorClass = NSClassFromString(@"SBMainSwitcherControllerCoordinator");
     CHLoadClass_(&SBMainSwitcherControllerCoordinator$, switcherCoordinatorClass);
-    if ([switcherCoordinatorClass instancesRespondToSelector:transitionBeginSelector]) {
+    if (KayokoHookMethodMatches(switcherCoordinatorClass, transitionBeginSelector, "v@:@@")) {
         CHHook2(SBMainSwitcherControllerCoordinator, layoutStateTransitionCoordinator,
                 transitionDidBeginWithTransitionContext);
     }
-    if ([switcherCoordinatorClass instancesRespondToSelector:transitionEndSelector]) {
+    if (KayokoHookMethodMatches(switcherCoordinatorClass, transitionEndSelector, "v@:@@")) {
         CHHook2(SBMainSwitcherControllerCoordinator, layoutStateTransitionCoordinator,
                 transitionDidEndWithTransitionContext);
     }
@@ -741,8 +743,12 @@ CHOptimizedMethod3(self, void, FBScene, updateSettings, UIApplicationSceneSettin
     class_addMethod(CHClass(SpringBoard), @selector(kayokoHandleExternalKeyboardShortcut:),
                     (IMP)kayokoHandleExternalKeyboardShortcut, "v@:@");
 
-    CHHook1(SpringBoard, applicationDidFinishLaunching);
-    CHHook0(SpringBoard, keyCommands);
+    if (KayokoHookMethodMatches(CHClass(SpringBoard), @selector(applicationDidFinishLaunching:), "v@:@")) {
+        CHHook1(SpringBoard, applicationDidFinishLaunching);
+    }
+    if (KayokoHookMethodMatches(CHClass(SpringBoard), @selector(keyCommands), "@@:")) {
+        CHHook0(SpringBoard, keyCommands);
+    }
 
     [self installHomeScreenHooks];
     [self installAppSwitcherHooks];

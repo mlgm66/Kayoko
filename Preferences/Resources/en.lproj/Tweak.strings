@@ -14,6 +14,15 @@
 "Archive.plist index is not an array" = "Archive.plist index is not an array";
 "Back" = "Back";
 "Cancel" = "Cancel";
+"Unable to Save Image" = "Unable to Save Image";
+"The edited image could not be saved. You can retry or cancel." = "The edited image could not be saved. You can retry or cancel.";
+"Retry" = "Retry";
+"Restore Original" = "Revert";
+"OK" = "OK";
+"Restore to Original?" = "Revert to Original?";
+"This removes all edits from this image." = "This removes all edits from this image.";
+"Unable to Restore Image" = "Unable to Revert Image";
+"The current image has not been changed. Please try again." = "The current image has not been changed. Please try again.";
 "Categories" = "Categories";
 "Clear" = "Clear";
 "Clear Clipboard" = "Clear Clipboard";
@@ -59,7 +68,6 @@
 "Open Settings → “Kayoko” to complete verification." = "Open Settings → “Kayoko” to complete verification.";
 "Paste" = "Paste";
 "Phone Numbers" = "Phone Numbers";
-"Preview" = "Preview";
 "SQLite operation failed" = "SQLite operation failed";
 "Save" = "Save";
 "Save to Photos" = "Save to Photos";
@@ -89,3 +97,4 @@
 "invalid %@ timestamp" = "invalid %@ timestamp";
 "invalid item path %@" = "invalid item path %@";
 "invalid timestamp %@" = "invalid timestamp %@";
+"Look Up" = "Look Up";

@@ -79,6 +79,10 @@ typedef NS_ENUM(NSUInteger, KayokoSwipeUpCheckResult) {
 }
 
 - (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [self updateTrackedTouchInTouches:touches];
+}
+
+- (void)updateTrackedTouchInTouches:(NSSet<UITouch *> *)touches {
     if (self.state != UIGestureRecognizerStatePossible || !_trackedTouch || ![touches containsObject:_trackedTouch]) {
         return;
     }
@@ -172,6 +176,7 @@ typedef NS_ENUM(NSUInteger, KayokoSwipeUpCheckResult) {
 }
 
 - (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [self updateTrackedTouchInTouches:touches];
     if (_trackedTouch && [touches containsObject:_trackedTouch] && self.state == UIGestureRecognizerStatePossible) {
         self.state = UIGestureRecognizerStateFailed;
     }

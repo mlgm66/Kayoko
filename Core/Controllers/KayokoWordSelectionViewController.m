@@ -10,7 +10,7 @@
 #import "KayokoActivitySharePresenter.h"
 #import "KayokoPasteboardItem.h"
 #import "KayokoPasteboardManager.h"
-#import "KayokoSystemTranslationPresenter.h"
+#import "KayokoTextActionPresenter.h"
 #import "KayokoWordSelectionView.h"
 
 static NSUInteger const kKayokoWordSelectionMaximumTextLength = 5000;
@@ -27,10 +27,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 #pragma mark - State
 
-@property(nonatomic, copy, readwrite) NSString *name;
 @property(nonatomic, copy, nullable, readwrite) NSString *sourceHistoryKey;
 @property(nonatomic, strong, nullable, readwrite) KayokoPasteboardItem *sourceItem;
-@property(nonatomic, strong) KayokoSystemTranslationPresenter *systemTranslationPresenter;
+@property(nonatomic, strong) KayokoTextActionPresenter *textActionPresenter;
 @property(nonatomic, strong) KayokoActivitySharePresenter *activitySharePresenter;
 @property(nonatomic, assign) BOOL usesSelectionOrderForSelectedText;
 @end
@@ -41,14 +40,12 @@ NS_ASSUME_NONNULL_END
 
 #pragma mark - Lifecycle
 
-- (instancetype)initWithName:(NSString *)name {
+- (instancetype)init {
     self = [super initWithNibName:nil bundle:nil];
     if (self) {
-        _name = [name copy];
         _wordSelectionView = [[KayokoWordSelectionView alloc] init];
-        [[_wordSelectionView headerView] setTitleText:name];
         [_wordSelectionView setHidden:YES];
-        _systemTranslationPresenter = [[KayokoSystemTranslationPresenter alloc] init];
+        _textActionPresenter = [[KayokoTextActionPresenter alloc] init];
         [[[_wordSelectionView headerView] alternateTrailingButton]
                    addTarget:self
                       action:@selector(handleSelectionOrderButtonPressed)
@@ -60,6 +57,10 @@ NS_ASSUME_NONNULL_END
         [[[_wordSelectionView headerView] translationButton]
                    addTarget:self
                       action:@selector(handleTranslationButtonPressed)
+            forControlEvents:UIControlEventTouchUpInside];
+        [[[_wordSelectionView headerView] bookButton]
+                   addTarget:self
+                      action:@selector(handleBookButtonPressed)
             forControlEvents:UIControlEventTouchUpInside];
         [[[_wordSelectionView headerView] shareButton]
                    addTarget:self
@@ -77,6 +78,7 @@ NS_ASSUME_NONNULL_END
           [weakSelf updateActionButtonState];
           [weakSelf updateSelectionActionButtonStates];
           [weakSelf updateTranslationButtonState];
+          [weakSelf updateBookButtonState];
           [weakSelf updateShareButtonState];
           if ([weakSelf selectionChangedHandler]) {
               [weakSelf selectionChangedHandler]();
@@ -128,7 +130,7 @@ NS_ASSUME_NONNULL_END
     KayokoHeaderView *headerView = [[self wordSelectionView] headerView];
     [headerView setHidden:NO];
     [headerView setHistorySwitcherVisible:NO animated:NO];
-    [headerView setTitleText:[self name]];
+    [headerView setTitleText:@""];
     [headerView updateStyleForButton:[headerView leadingButton]
                        withImageName:@"arrowshape.turn.up.backward"
                            imageSize:kKayokoFavoritesButtonImageSize
@@ -137,15 +139,31 @@ NS_ASSUME_NONNULL_END
                        withImageName:(automaticallyPaste ? @"doc.on.clipboard" : @"doc.on.doc.fill")imageSize
                                     :kKayokoBackButtonImageSize
                            tintColor:[UIColor labelColor]];
+    [headerView updateStyleForButton:[headerView openLinkButton]
+                       withImageName:@"arrow.up"
+                           imageSize:kKayokoBackButtonImageSize
+                           tintColor:[UIColor labelColor]];
+    [[headerView openLinkButton] setHidden:![item hasLink]];
+    [[headerView openLinkButton] setEnabled:[item hasLink]];
+    [[headerView openLinkButton] setAlpha:1.0];
     [[headerView alternateTrailingButton] setHidden:NO];
     [[headerView alternateTrailingButton] setEnabled:YES];
     [[headerView alternateTrailingButton] setAlpha:1.0];
+    [[headerView alternateTrailingButton]
+        setAccessibilityLabel:[[KayokoPasteboardManager localizationBundle] localizedStringForKey:@"Selection Order"
+                                                                                            value:nil
+                                                                                            table:@"Tweak"]];
     [[headerView selectionActionButton] setHidden:NO];
     NSString *translationImageName = [UIImage systemImageNamed:@"character.bubble"] ? @"character.bubble" : @"globe";
     [headerView updateStyleForButton:[headerView translationButton]
                        withImageName:translationImageName
                            imageSize:kKayokoBackButtonImageSize
                            tintColor:[UIColor labelColor]];
+    [headerView updateStyleForButton:[headerView bookButton]
+                       withImageName:@"book.closed"
+                           imageSize:kKayokoBackButtonImageSize
+                           tintColor:[UIColor labelColor]];
+    [[headerView bookButton] setHidden:NO];
     [headerView updateStyleForButton:[headerView shareButton]
                        withImageName:@"square.and.arrow.up"
                            imageSize:kKayokoBackButtonImageSize
@@ -160,8 +178,8 @@ NS_ASSUME_NONNULL_END
                                   localizedStringForKey:(automaticallyPaste ? @"Paste" : @"Copy")
                                                   value:nil
                                                   table:@"Tweak"]];
-    [[headerView alternateTrailingButton]
-        setAccessibilityLabel:[[KayokoPasteboardManager localizationBundle] localizedStringForKey:@"Selection Order"
+    [[headerView openLinkButton]
+        setAccessibilityLabel:[[KayokoPasteboardManager localizationBundle] localizedStringForKey:@"Open"
                                                                                             value:nil
                                                                                             table:@"Tweak"]];
     [[headerView shareButton]
@@ -173,6 +191,7 @@ NS_ASSUME_NONNULL_END
     [self updateActionButtonState];
     [self updateSelectionActionButtonStates];
     [self updateTranslationButtonState];
+    [self updateBookButtonState];
     [self updateShareButtonState];
 }
 
@@ -186,15 +205,14 @@ NS_ASSUME_NONNULL_END
 
 - (void)handleActionButtonWithAutomaticallyPaste:(BOOL)automaticallyPaste {
     KayokoPasteboardItem *sourceItem = [self sourceItem];
-    if (!sourceItem || ![self isShowingWordSelection] || ![self hasSelectedText]) {
+    NSString *text = [self textForActions];
+    if (!sourceItem || ![self isShowingWordSelection] || [text length] == 0) {
         return;
     }
-
-    NSString *text = [self selectedText];
-    KayokoPasteboardItem *selectedItem =
+    KayokoPasteboardItem *selectedItem = [self hasSelectedText] ?
         [[KayokoPasteboardItem alloc] initWithBundleIdentifier:[sourceItem bundleIdentifier]
                                                     andContent:text
-                                                withImageNamed:@""];
+                                                withImageNamed:@""] : sourceItem;
     NSString *historyKey = [self sourceHistoryKey] ?: kKayokoHistoryKeyHistory;
     if (automaticallyPaste) {
         [[KayokoPasteboardManager sharedInstance] writePasteboardItem:selectedItem
@@ -227,20 +245,22 @@ NS_ASSUME_NONNULL_END
 }
 
 - (void)handleTranslationButtonPressed {
-    if (![self hasSelectedText]) {
-        return;
-    }
-
     KayokoHeaderView *headerView = [[self wordSelectionView] headerView];
-    if ([[self systemTranslationPresenter] presentTranslationForText:[self selectedText]
-                                                      fromController:self
-                                                          anchorView:[headerView translationButton]]) {
+    if ([[self textActionPresenter] presentTranslationForText:[self textForActions]
+                                             fromController:self
+                                                 anchorView:[headerView translationButton]]) {
+        [[self delegate] wordSelectionViewController:self triggerHapticFeedbackWithStyle:UIImpactFeedbackStyleLight];
+    }
+}
+
+- (void)handleBookButtonPressed {
+    if ([[self textActionPresenter] presentLookupForText:[self textForActions] fromController:self]) {
         [[self delegate] wordSelectionViewController:self triggerHapticFeedbackWithStyle:UIImpactFeedbackStyleLight];
     }
 }
 
 - (void)handleShareButtonPressed {
-    NSString *text = [self selectedText];
+    NSString *text = [self textForActions];
     if ([text length] == 0) {
         return;
     }
@@ -265,9 +285,13 @@ NS_ASSUME_NONNULL_END
 }
 
 - (void)resetWordSelectionState {
-    [[self systemTranslationPresenter] dismissTranslationAnimated:NO];
+    [[self textActionPresenter] dismissActionsAnimated:NO];
     [[self activitySharePresenter] dismissActivityAnimated:NO];
+    [[[[self wordSelectionView] headerView] alternateTrailingButton] setHidden:YES];
+    [[[[self wordSelectionView] headerView] selectionActionButton] setHidden:YES];
+    [[[[self wordSelectionView] headerView] openLinkButton] setHidden:YES];
     [[[[self wordSelectionView] headerView] translationButton] setHidden:YES];
+    [[[[self wordSelectionView] headerView] bookButton] setHidden:YES];
     [[[[self wordSelectionView] headerView] shareButton] setHidden:YES];
     [self setEditButtonHidden:YES];
     [[self wordSelectionView] setHidden:YES];
@@ -275,6 +299,10 @@ NS_ASSUME_NONNULL_END
     [[self wordSelectionView] reset];
     [self setSourceItem:nil];
     [self setSourceHistoryKey:nil];
+}
+
+- (BOOL)shouldSuppressExternalHideRequest {
+    return [[self textActionPresenter] shouldSuppressExternalHideRequest];
 }
 
 #pragma mark - Edit
@@ -322,10 +350,15 @@ NS_ASSUME_NONNULL_END
     [[self delegate] wordSelectionViewControllerDidRequestEdit:self];
 }
 
+- (NSString *)textForActions {
+    return [self hasSelectedText] ? [self selectedText] :
+        kayokoWordSelectionTextByTrimmingBoundaryNewlines([[self sourceItem] content]);
+}
+
 #pragma mark - Header
 
 - (void)updateActionButtonState {
-    BOOL enabled = [self hasSelectedText];
+    BOOL enabled = [[self textForActions] length] > 0;
     UIButton *actionButton = [[[self wordSelectionView] headerView] trailingButton];
     [actionButton setEnabled:enabled];
     [actionButton setAlpha:enabled ? 1.0 : 0.35];
@@ -333,7 +366,7 @@ NS_ASSUME_NONNULL_END
 
 - (void)updateShareButtonState {
     UIButton *shareButton = [[[self wordSelectionView] headerView] shareButton];
-    BOOL enabled = [self hasSelectedText];
+    BOOL enabled = [[self textForActions] length] > 0;
     [shareButton setEnabled:enabled];
     [shareButton setAlpha:enabled ? 1.0 : 0.35];
 }
@@ -380,19 +413,28 @@ NS_ASSUME_NONNULL_END
 
 - (void)updateTranslationButtonState {
     UIButton *translationButton = [[[self wordSelectionView] headerView] translationButton];
-    BOOL available = [[self systemTranslationPresenter] isAvailable];
+    BOOL available = [[self textActionPresenter] isTranslationAvailable];
     [translationButton setHidden:!available];
     if (!available) {
         return;
     }
 
-    BOOL enabled = [self hasSelectedText];
+    BOOL enabled = [[self textForActions] length] > 0;
     [translationButton setEnabled:enabled];
     [translationButton setAlpha:enabled ? 1.0 : 0.35];
     [translationButton
         setAccessibilityLabel:[[KayokoPasteboardManager localizationBundle] localizedStringForKey:@"Translate"
                                                                                             value:nil
                                                                                             table:@"Tweak"]];
+}
+
+- (void)updateBookButtonState {
+    UIButton *bookButton = [[[self wordSelectionView] headerView] bookButton];
+    BOOL enabled = [[self textForActions] length] > 0;
+    [bookButton setEnabled:enabled];
+    [bookButton setAlpha:enabled ? 1.0 : 0.35];
+    [bookButton setAccessibilityLabel:[[KayokoPasteboardManager localizationBundle]
+                                          localizedStringForKey:@"Look Up" value:nil table:@"Tweak"]];
 }
 
 @end

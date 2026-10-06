@@ -13,6 +13,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @protocol KayokoPreviewViewControllerDelegate <NSObject>
 - (void)previewViewControllerDidRequestEdit:(KayokoPreviewViewController *)controller;
+- (void)previewViewControllerDidFinishImageEditing:(KayokoPreviewViewController *)controller;
 @end
 
 @interface KayokoPreviewViewController : UIViewController
@@ -26,8 +27,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)showPreviewWithItem:(KayokoPasteboardItem *)item sourceHistoryKey:(NSString *)sourceHistoryKey;
 - (void)handleActionButtonWithCompletion:(nullable void (^)(BOOL success))completion;
 - (void)setEditButtonEnabled:(BOOL)enabled;
+- (void)beginImageEditing;
+- (void)dismissImageEditing;
 - (void)hidePreview;
 - (void)resetPreviewState;
+- (BOOL)shouldSuppressExternalHideRequest;
 - (void)scrollToTopAnimated:(BOOL)animated;
 
 @end

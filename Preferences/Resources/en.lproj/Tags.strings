@@ -2,7 +2,6 @@
 "Blue" = "Blue";
 "Cancel" = "Cancel";
 "Color" = "Color";
-"Custom Tags…" = "Custom Tags…";
 "Delete" = "Delete";
 "Deselect All" = "Deselect All";
 "Done" = "Done";
@@ -23,3 +22,19 @@
 "Unable to Save Tags" = "Unable to Save Tags";
 "Untitled" = "Untitled";
 "Yellow" = "Yellow";
+"Tag Management" = "Tag Management";
+"Tag Row Order" = "Tag Row Order";
+"Tags Within Each Row" = "Tags Within Each Row";
+"Category Tags" = "Category Tags";
+"Application Tags" = "Application Tags";
+"Custom Tags" = "Custom Tags";
+"Drag the handles to change the order of the three rows." = "Drag the handles to change the order of the three rows.";
+"Open a tag group to change its left-to-right order." = "Open a tag group to change its left-to-right order.";
+"Drag the handles. Tags at the top appear on the left." = "Drag the handles. Tags at the top appear on the left.";
+"Changes are saved automatically. Reopen the panel to see them." = "Changes are saved automatically. Reopen the panel to see them.";
+"Only applications with clipboard records are listed. New applications are added at the end." = "Only applications with clipboard records are listed. New applications are added at the end.";
+"No Application Tags" = "No Application Tags";
+"Loading Applications…" = "Loading Applications…";
+"Unable to Load Application Tags" = "Unable to Load Application Tags";
+"Unable to Save Tag Order" = "Unable to Save Tag Order";
+"%@ items" = "%@ items";

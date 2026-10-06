@@ -30,6 +30,8 @@ KayokoPreferences_LDFLAGS += -FFrameworks
 endif
 
 KayokoPreferences_EXTRA_FRAMEWORKS += AltList
+KayokoPreferences_PRIVATE_FRAMEWORKS += CoreServices
+KayokoPreferences_LIBRARIES += sqlite3
 KayokoPreferences_PRIVATE_FRAMEWORKS += FrontBoardServices
 KayokoPreferences_PRIVATE_FRAMEWORKS += Preferences
 KayokoPreferences_PRIVATE_FRAMEWORKS += SpringBoardServices

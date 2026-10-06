@@ -38,11 +38,24 @@
 
 - (void)saveImageForItem:(KayokoPasteboardItem *)item completion:(void (^)(BOOL success))completion {
     UIImage *image = item ? [[KayokoPasteboardManager sharedInstance] getImageForItem:item] : nil;
-    if (image) {
-        UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil);
+    if (!image) {
+        if (completion) {
+            completion(NO);
+        }
+        return;
     }
+
+    UIImageWriteToSavedPhotosAlbum(image, [KayokoHistoryItemActionHandler class],
+                                   @selector(image:didFinishSavingWithError:contextInfo:),
+                                   (__bridge_retained void *)[completion copy]);
+}
+
++ (void)image:(UIImage *)image didFinishSavingWithError:(NSError *)error contextInfo:(void *)contextInfo {
+    void (^completion)(BOOL success) = (__bridge_transfer id)contextInfo;
     if (completion) {
-        completion(image != nil);
+        dispatch_async(dispatch_get_main_queue(), ^{
+          completion(error == nil);
+        });
     }
 }
 

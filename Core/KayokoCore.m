@@ -7,7 +7,9 @@
 
 #import "KayokoCore.h"
 #import "KayokoCoreRuntime.h"
+#import "KayokoFilterApplicationBridge.h"
 #import "KayokoNotificationKeys.h"
+#import "KayokoPasteboardManager.h"
 #import "KayokoSpringBoardHooks.h"
 
 #import <CoreFoundation/CoreFoundation.h>
@@ -238,6 +240,13 @@ static void kayokoCorePasteTipPreferencesReloadCallback(CFNotificationCenterRef 
 + (void)installForSpringBoard {
     KayokoCoreRuntime *runtime = [KayokoCoreRuntime sharedRuntime];
     [runtime loadPreferences];
+    BOOL servesApplicationCatalog = [[KayokoFilterApplicationBridge sharedBridge]
+        startServingWithProvider:^(KayokoFilterApplicationCompletion completion) {
+            [[KayokoPasteboardManager sharedInstance] availableSearchAppBundleIdentifiersWithCompletion:completion];
+        }];
+    if (!servesApplicationCatalog) {
+        NSLog(@"Kayoko: Unable to start application catalog service");
+    }
     [self addDarwinObserverForName:(__bridge CFStringRef)kKayokoNotificationKeyCoreCheckpointHistory
                           callback:kayokoCoreCheckpointHistoryCallback];
     [self addDarwinObserverForName:(__bridge CFStringRef)kKayokoNotificationKeyCorePrepareMaintenance
@@ -261,6 +270,8 @@ static void kayokoCorePasteTipPreferencesReloadCallback(CFNotificationCenterRef 
     [self addDarwinObserverForName:(__bridge CFStringRef)kKayokoNotificationKeyCoreShow
                           callback:kayokoCoreShowCallback];
     [self addDarwinObserverForName:(__bridge CFStringRef)kKayokoLegacyNotificationKeyCoreShow
+                          callback:kayokoCoreShowCallback];
+    [self addDarwinObserverForName:(__bridge CFStringRef)kKayokoOriginalNotificationKeyCoreShow
                           callback:kayokoCoreShowCallback];
     [self addDarwinObserverForName:(__bridge CFStringRef)kKayokoNotificationKeyCoreHide
                           callback:kayokoCoreHideCallback];

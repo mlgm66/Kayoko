@@ -9,6 +9,7 @@
 
 static NSString *const kKayokoNotificationKeyCoreShow = @"com.mlgm.kayoko.core.show";
 static NSString *const kKayokoLegacyNotificationKeyCoreShow = @"dev.traurige.kayoko.core.show";
+static NSString *const kKayokoOriginalNotificationKeyCoreShow = @"codes.aurora.kayoko.core.show";
 static NSString *const kKayokoNotificationKeyCoreHide = @"com.mlgm.kayoko.core.hide";
 static NSString *const kKayokoLegacyNotificationKeyCoreHide = @"dev.traurige.kayoko.core.hide";
 static NSString *const kKayokoNotificationKeyCoreReload = @"com.mlgm.kayoko.core.reload";

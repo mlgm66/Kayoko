@@ -5,6 +5,8 @@
 
 #import <UIKit/UIKit.h>
 
+@class KayokoFilterOrderStore;
+
 @class KayokoSearchCriteria;
 @class KayokoSearchToken;
 @class KayokoSearchTokenListViewController;
@@ -30,6 +32,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)updateWithSearchCriteria:(KayokoSearchCriteria *)searchCriteria
                        tagTokens:(NSArray<KayokoSearchToken *> *)tagTokens
                        appTokens:(NSArray<KayokoSearchToken *> *)appTokens;
+- (void)applyFilterOrder:(KayokoFilterOrderStore *)orderStore;
 - (void)resetSearchSessionState;
 - (CGFloat)preferredContentHeightForWidth:(CGFloat)width;
 

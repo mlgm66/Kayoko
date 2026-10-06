@@ -9,6 +9,7 @@
 #import "KayokoNotificationKeys.h"
 #import "KayokoPreferenceKeys.h"
 #import "KayokoRespringControllerSupport.h"
+#import "KayokoSearchPresentation.h"
 #import "KayokoSliderCell.h"
 
 #import <Preferences/PSSpecifier.h>
@@ -38,6 +39,7 @@ NS_ASSUME_NONNULL_END
     ActivationMethod _lastActivationMethod;
     BOOL _hasActivationMethodSnapshot;
     UISearchController *_testInputSearchController;
+    BOOL _searchPositionedAtTop;
     BOOL _externalImportRestartReminderPending;
     BOOL _externalImportRestartReminderSucceeded;
     NSString *_externalImportRestartReminderSource;
@@ -76,15 +78,11 @@ NS_ASSUME_NONNULL_END
 
     _testInputSearchController = [[UISearchController alloc] initWithSearchResultsController:nil];
     _testInputSearchController.searchResultsUpdater = self;
-    _testInputSearchController.obscuresBackgroundDuringPresentation = NO;
-    _testInputSearchController.hidesNavigationBarDuringPresentation = NO;
     _testInputSearchController.searchBar.placeholder = [bundle localizedStringForKey:@"Wishing on a star…"
                                                                                value:nil
                                                                                table:@"Root"];
 
-    self.definesPresentationContext = YES;
-    self.navigationItem.searchController = _testInputSearchController;
-    self.navigationItem.hidesSearchBarWhenScrolling = YES;
+    KayokoConfigureSearchPresentation(self, _testInputSearchController);
 }
 
 - (void)updateSearchResultsForSearchController:(UISearchController *)searchController {
@@ -97,25 +95,10 @@ NS_ASSUME_NONNULL_END
     if (!_specifiers) {
         _specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
         [self configureConditionalFootersInSpecifiers:_specifiers];
-        [self configureTagManagementSpecifierInSpecifiers:_specifiers];
         [self updateOverlayWindowLevelSpecifierAvailability];
     }
 
     return _specifiers;
-}
-
-- (void)configureTagManagementSpecifierInSpecifiers:(NSArray<PSSpecifier *> *)specifiers {
-    NSBundle *bundle = [NSBundle bundleForClass:[self class]];
-    NSString *localizedTitle = [bundle localizedStringForKey:@"Custom Tags…" value:nil table:@"Tags"];
-    for (PSSpecifier *specifier in specifiers) {
-        NSString *detail = [specifier propertyForKey:@"detail"];
-        if (![detail isEqualToString:@"KayokoTagManagementViewController"]) {
-            continue;
-        }
-
-        [specifier setProperty:localizedTitle forKey:@"label"];
-        break;
-    }
 }
 
 - (void)configureConditionalFootersInSpecifiers:(NSArray<PSSpecifier *> *)specifiers {
@@ -166,6 +149,7 @@ NS_ASSUME_NONNULL_END
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
+    KayokoRevealSearchOnFirstAppearance(self, self.table, &_searchPositionedAtTop);
     [[self navigationController] setToolbarHidden:YES animated:animated];
     [self presentExternalImportRestartReminderIfNeeded];
 }
@@ -382,15 +366,6 @@ NS_ASSUME_NONNULL_END
             }
 
             cell.detailTextLabel.text = detailText;
-            return cell;
-        }
-    }
-    if ([key isEqualToString:@"PSLinkCell"]) {
-        NSString *detail = [specifier propertyForKey:@"detail"];
-        if ([detail isEqualToString:@"KayokoTagManagementViewController"]) {
-            UITableViewCell *cell = [super tableView:tableView cellForRowAtIndexPath:indexPath];
-            NSBundle *bundle = [NSBundle bundleForClass:[self class]];
-            cell.textLabel.text = [bundle localizedStringForKey:@"Custom Tags…" value:nil table:@"Tags"];
             return cell;
         }
     }

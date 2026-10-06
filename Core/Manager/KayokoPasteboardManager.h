@@ -82,6 +82,18 @@ forPasteboardItem:(KayokoPasteboardItem *)item
      forPasteboardItem:(KayokoPasteboardItem *)item
       inHistoryWithKey:(NSString *)historyKey
             completion:(nullable void (^)(BOOL success))completion;
+- (void)replaceImageForPasteboardItem:(KayokoPasteboardItem *)item
+                   inHistoryWithKey:(NSString *)historyKey
+                      editedFileURL:(NSURL *)URL
+                         completion:(void (^)(KayokoPasteboardItem *_Nullable updatedItem,
+                                              NSError *_Nullable error))completion;
+- (void)canRestoreImageForPasteboardItem:(KayokoPasteboardItem *)item
+                      inHistoryWithKey:(NSString *)historyKey
+                            completion:(void (^)(BOOL canRestore, NSError *_Nullable error))completion;
+- (void)restoreOriginalImageForPasteboardItem:(KayokoPasteboardItem *)item
+                           inHistoryWithKey:(NSString *)historyKey
+                                 completion:(void (^)(KayokoPasteboardItem *_Nullable updatedItem,
+                                                      NSError *_Nullable error))completion;
 - (void)removeAllPasteboardItemsFromHistoryWithKey:(NSString *)historyKey
                                 shouldRemoveImages:(BOOL)shouldRemoveImages
                                         completion:(nullable void (^)(BOOL success))completion;

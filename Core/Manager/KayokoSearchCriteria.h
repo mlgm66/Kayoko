@@ -4,20 +4,9 @@
 //
 
 #import <Foundation/Foundation.h>
+#import "KayokoFilterCatalog.h"
 
 NS_ASSUME_NONNULL_BEGIN
-
-extern NSString *const kKayokoSearchTokenTypeCategory;
-extern NSString *const kKayokoSearchTokenTypeApp;
-extern NSString *const kKayokoSearchTokenTypeTag;
-
-extern NSString *const kKayokoSearchCategoryText;
-extern NSString *const kKayokoSearchCategoryLink;
-extern NSString *const kKayokoSearchCategoryPhone;
-extern NSString *const kKayokoSearchCategoryDate;
-extern NSString *const kKayokoSearchCategoryAddress;
-extern NSString *const kKayokoSearchCategoryFlight;
-extern NSString *const kKayokoSearchCategoryImage;
 
 @interface KayokoSearchToken : NSObject <NSCopying>
 

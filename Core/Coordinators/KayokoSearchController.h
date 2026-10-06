@@ -61,6 +61,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)isActiveSearchFirstResponder;
 - (void)resignSearchFirstResponder;
 - (void)handleApplicationMetadataChanged;
+- (void)reloadFilterOrder;
 - (void)handleFullscreenPanGestureRecognizer:(UIPanGestureRecognizer *)recognizer
                                   headerView:(nullable KayokoHeaderView *)headerView;
 - (void)resetSearchState;

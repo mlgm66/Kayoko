@@ -8,7 +8,7 @@
 #import "KayokoHelperHookInstaller.h"
 #import "KayokoHelperLocalization.h"
 #import "KayokoHelperRuntime.h"
-#import "KayokoNotificationKeys.h"
+#import "../Shared/KayokoHookValidation.h"
 
 #import <CaptainHook/CaptainHook.h>
 #import <UIKit/UIKit.h>
@@ -23,7 +23,6 @@
 @end
 
 @interface UIKeyboardAutocorrectionController : NSObject
-- (void)setTextSuggestionList:(TIAutocorrectionList *)textSuggestionList;
 - (void)setAutocorrectionList:(TIAutocorrectionList *)textSuggestionList;
 @end
 
@@ -32,7 +31,6 @@
 
 @interface TIKeyboardCandidateSingle : TIKeyboardCandidate
 @property(nonatomic, copy) NSString *candidate;
-@property(nonatomic, copy) NSString *input;
 @end
 
 @interface TIZephyrCandidate : TIKeyboardCandidateSingle
@@ -48,7 +46,6 @@
 @interface UIKeyboardImpl : UIView
 @property(nonatomic, strong, readonly) UIKeyboardAutocorrectionController *autocorrectionController;
 @property(nonatomic, strong) UIKBInputDelegateManager *inputDelegateManager;
-@property(nonatomic, strong, readonly) UIResponder<UITextInput> *inputDelegate;
 + (instancetype)activeInstance;
 @end
 
@@ -71,6 +68,9 @@ static TIAutocorrectionList *kayokoCreateAutocorrectionList(void) {
     NSMutableArray<TIZephyrCandidate *> *candidates = [[NSMutableArray alloc] init];
     for (NSString *label in labels) {
         TIZephyrCandidate *candidate = [[objc_getClass("TIZephyrCandidate") alloc] init];
+        if (!candidate) {
+            return nil;
+        }
         [candidate setLabel:KayokoHelperLocalizedString(label)];
         [candidate setCandidate:[NSString stringWithFormat:@"{kayoko-%@}", label]];
         [candidate setFromBundleId:@"com.mlgm.kayoko"];
@@ -80,42 +80,24 @@ static TIAutocorrectionList *kayokoCreateAutocorrectionList(void) {
     return [objc_getClass("TIAutocorrectionList") listWithAutocorrection:nil predictions:candidates emojiList:nil];
 }
 
-CHOptimizedMethod1(self, void, UIKeyboardAutocorrectionController, setTextSuggestionList, TIAutocorrectionList *,
-                   textSuggestionList) {
-    if (kayokoShouldShowCustomSuggestions) {
-        CHSuper1(UIKeyboardAutocorrectionController, setTextSuggestionList, kayokoCreateAutocorrectionList());
-    } else {
-        CHSuper1(UIKeyboardAutocorrectionController, setTextSuggestionList, textSuggestionList);
-    }
-}
-
 CHOptimizedMethod1(self, void, UIKeyboardAutocorrectionController, setAutocorrectionList, TIAutocorrectionList *,
                    autoCorrectionList) {
-    if (kayokoShouldShowCustomSuggestions) {
-        CHSuper1(UIKeyboardAutocorrectionController, setAutocorrectionList, kayokoCreateAutocorrectionList());
-    } else {
-        CHSuper1(UIKeyboardAutocorrectionController, setAutocorrectionList, autoCorrectionList);
-    }
+    TIAutocorrectionList *kayokoList = kayokoShouldShowCustomSuggestions ? kayokoCreateAutocorrectionList() : nil;
+    CHSuper1(UIKeyboardAutocorrectionController, setAutocorrectionList, kayokoList ?: autoCorrectionList);
 }
 
 CHOptimizedMethod2(self, void, UIPredictionViewController, predictionView, TUIPredictionView *, predictionView,
                    didSelectCandidate, TIZephyrCandidate *, candidate) {
     if ([candidate respondsToSelector:@selector(fromBundleId)] &&
+        [candidate respondsToSelector:@selector(candidate)] &&
         [[candidate fromBundleId] isEqualToString:@"com.mlgm.kayoko"]) {
         if ([[candidate candidate] isEqualToString:@"{kayoko-History}"]) {
             [[KayokoHelperRuntime sharedRuntime] activateKayoko];
         } else if ([[candidate candidate] isEqualToString:@"{kayoko-Copy}"]) {
-            NSString *text = nil;
-            if (@available(iOS 15.0, *)) {
-                UIKBInputDelegateManager *delegateManager =
-                    [[objc_getClass("UIKeyboardImpl") activeInstance] inputDelegateManager];
-                UITextRange *range = [delegateManager selectedTextRange];
-                text = [delegateManager textInRange:range];
-            } else {
-                id delegate = [[objc_getClass("UIKeyboardImpl") activeInstance] inputDelegate];
-                UITextRange *range = [delegate selectedTextRange];
-                text = [delegate textInRange:range];
-            }
+            UIKBInputDelegateManager *delegateManager =
+                [[objc_getClass("UIKeyboardImpl") activeInstance] inputDelegateManager];
+            UITextRange *range = [delegateManager selectedTextRange];
+            NSString *text = range ? [delegateManager textInRange:range] : nil;
 
             if (text.length > 0) {
                 [[UIPasteboard generalPasteboard] setString:text];
@@ -136,14 +118,10 @@ CHOptimizedMethod2(self, BOOL, UIPredictionViewController, isVisibleForInputDele
 CHOptimizedMethod1(self, void, UIKeyboardLayoutStar, setKeyplaneName, NSString *, name) {
     CHSuper1(UIKeyboardLayoutStar, setKeyplaneName, name);
 
-    kayokoShouldShowCustomSuggestions = [name isEqualToString:@"numbers-and-punctuation"] ||
-                                        [name isEqualToString:@"numbers-and-punctuation-alternate"];
+    kayokoShouldShowCustomSuggestions = [name isEqualToString:@"first-alternate"] ||
+                                        [name isEqualToString:@"second-alternate"];
 
-    if (@available(iOS 15.0, *)) {
-        [[[objc_getClass("UIKeyboardImpl") activeInstance] autocorrectionController] setAutocorrectionList:nil];
-    } else {
-        [[[objc_getClass("UIKeyboardImpl") activeInstance] autocorrectionController] setTextSuggestionList:nil];
-    }
+    [[[objc_getClass("UIKeyboardImpl") activeInstance] autocorrectionController] setAutocorrectionList:nil];
 }
 
 @implementation KayokoHelperHookInstaller (PredictionBar)
@@ -151,15 +129,38 @@ CHOptimizedMethod1(self, void, UIKeyboardLayoutStar, setKeyplaneName, NSString *
 + (void)installPredictionBarHooks {
     static dispatch_once_t sOnceToken;
     dispatch_once(&sOnceToken, ^{
-      CHLoadClass_(&UIKeyboardAutocorrectionController$, NSClassFromString(@"UIKeyboardAutocorrectionController"));
-      if (@available(iOS 15.0, *)) {
-          CHHook1(UIKeyboardAutocorrectionController, setAutocorrectionList);
-      } else {
-          CHHook1(UIKeyboardAutocorrectionController, setTextSuggestionList);
+      Class candidateClass = NSClassFromString(@"TIZephyrCandidate");
+      Class listClass = NSClassFromString(@"TIAutocorrectionList");
+      Class keyboardImplClass = NSClassFromString(@"UIKeyboardImpl");
+      Class delegateManagerClass = NSClassFromString(@"UIKBInputDelegateManager");
+      Class autocorrectionClass = NSClassFromString(@"UIKeyboardAutocorrectionController");
+      Class predictionClass = NSClassFromString(@"UIPredictionViewController");
+      Class layoutClass = NSClassFromString(@"UIKeyboardLayoutStar");
+      if (!KayokoHookMethodMatches(candidateClass, @selector(init), "@@:") ||
+          !KayokoHookMethodMatches(candidateClass, @selector(setLabel:), "v@:@") ||
+          !KayokoHookMethodMatches(candidateClass, @selector(setCandidate:), "v@:@") ||
+          !KayokoHookMethodMatches(candidateClass, @selector(setFromBundleId:), "v@:@") ||
+          !KayokoHookMethodMatches(candidateClass, @selector(fromBundleId), "@@:") ||
+          !KayokoHookMethodMatches(candidateClass, @selector(candidate), "@@:") ||
+          !KayokoHookMethodMatches(object_getClass(listClass),
+                                  @selector(listWithAutocorrection:predictions:emojiList:), "@@:@@@") ||
+          !KayokoHookMethodMatches(object_getClass(keyboardImplClass), @selector(activeInstance), "@@:") ||
+          !KayokoHookMethodMatches(keyboardImplClass, @selector(autocorrectionController), "@@:") ||
+          !KayokoHookMethodMatches(keyboardImplClass, @selector(inputDelegateManager), "@@:") ||
+          !KayokoHookMethodMatches(delegateManagerClass, @selector(selectedTextRange), "@@:") ||
+          !KayokoHookMethodMatches(delegateManagerClass, @selector(textInRange:), "@@:@") ||
+          !KayokoHookMethodMatches(autocorrectionClass, @selector(setAutocorrectionList:), "v@:@") ||
+          !KayokoHookMethodMatches(predictionClass, @selector(predictionView:didSelectCandidate:), "v@:@@") ||
+          !KayokoHookMethodMatches(predictionClass, @selector(isVisibleForInputDelegate:inputViews:), "B@:@@") ||
+          !KayokoHookMethodMatches(layoutClass, @selector(setKeyplaneName:), "v@:@")) {
+          NSLog(@"Kayoko: 候选栏接口不匹配，未安装激活钩子");
+          return;
       }
-      CHLoadClass_(&UIPredictionViewController$, NSClassFromString(@"UIPredictionViewController"));
+      CHLoadClass_(&UIKeyboardAutocorrectionController$, autocorrectionClass);
+      CHHook1(UIKeyboardAutocorrectionController, setAutocorrectionList);
+      CHLoadClass_(&UIPredictionViewController$, predictionClass);
       CHHook2(UIPredictionViewController, isVisibleForInputDelegate, inputViews);
-      CHLoadClass_(&UIKeyboardLayoutStar$, NSClassFromString(@"UIKeyboardLayoutStar"));
+      CHLoadClass_(&UIKeyboardLayoutStar$, layoutClass);
       CHHook1(UIKeyboardLayoutStar, setKeyplaneName);
       CHHook2(UIPredictionViewController, predictionView, didSelectCandidate);
     });

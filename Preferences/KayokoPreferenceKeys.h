@@ -57,6 +57,9 @@ typedef NS_ENUM(NSUInteger, KayokoOverlayWindowLevelMode) {
 };
 
 static NSString *const kKayokoPreferencesIdentifier = @"com.mlgm.kayoko.preferences";
+static NSString *const kKayokoPreferenceKeyFilterSectionOrder = @"FilterSectionOrder";
+static NSString *const kKayokoPreferenceKeyFilterCategoryOrder = @"FilterCategoryOrder";
+static NSString *const kKayokoPreferenceKeyFilterApplicationOrder = @"FilterApplicationOrder";
 
 static NSString *const kKayokoPreferenceKeyEnabled = @"Enabled";
 static NSString *const kKayokoPreferenceKeyMaximumHistoryAmount = @"MaximumHistoryAmount";
@@ -98,7 +101,7 @@ static KayokoGestureRecognizerMode const kKayokoPreferenceKeyGestureRecognizerMo
     kKayokoGestureRecognizerModeClassic;
 static BOOL const kKayokoPreferenceKeyAutomaticallyPasteDefaultValue = YES;
 static KayokoAutomaticPasteMode const kKayokoPreferenceKeyAutomaticPasteModeDefaultValue =
-    kKayokoAutomaticPasteModeClassic;
+    kKayokoAutomaticPasteModeAutomatic;
 static KayokoAutomaticPromotionMode const kKayokoPreferenceKeyAutomaticPromotionModeDefaultValue =
     kKayokoAutomaticPromotionModeHistoryOnly;
 static KayokoInitialViewMode const kKayokoPreferenceKeyInitialViewModeDefaultValue =

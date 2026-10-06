@@ -15,6 +15,7 @@ kayoko_updater_FILES += ../Core/Manager/KayokoRichTextRepresentation.m
 kayoko_updater_FILES += ../Core/Manager/KayokoSearchCriteria.m
 kayoko_updater_FILES += ../Shared/Tags/KayokoTag.m
 kayoko_updater_FILES += ../Shared/Tags/KayokoTagStore.m
+kayoko_updater_FILES += ../Shared/Tags/KayokoFilterCatalog.m
 
 kayoko_updater_CFLAGS += -fobjc-arc
 kayoko_updater_CFLAGS += -I../Core/Manager

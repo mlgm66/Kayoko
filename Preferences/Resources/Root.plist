@@ -150,9 +150,9 @@
 			<key>cell</key>
 			<string>PSLinkCell</string>
 			<key>detail</key>
-			<string>KayokoTagManagementViewController</string>
+			<string>KayokoFilterManagementViewController</string>
 			<key>label</key>
-			<string>CUSTOM_TAGS</string>
+			<string>TAG_MANAGEMENT</string>
 		</dict>
 
 		<dict>
@@ -194,7 +194,7 @@
 			<key>footerText</key>
 			<string>Choose how much text each clipboard item shows in the list. More lines make items easier to identify, but show fewer items at once.</string>
 			<key>label</key>
-			<string>Preview</string>
+			<string>Content Display</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -206,7 +206,7 @@
 			<key>key</key>
 			<string>PreviewLineCount</string>
 			<key>label</key>
-			<string>Preview Lines</string>
+			<string>Display Lines</string>
 			<key>validValues</key>
 			<array>
 				<integer>1</integer>
@@ -518,7 +518,7 @@
 			<key>defaults</key>
 			<string>com.mlgm.kayoko.preferences</string>
 			<key>detail</key>
-			<string>ATLApplicationListMultiSelectionController</string>
+			<string>KayokoApplicationBlacklistListController</string>
 			<key>key</key>
 			<string>ApplicationBlacklist</string>
 			<key>label</key>
@@ -588,21 +588,29 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string></string>
+			<string>About</string>
 			<key>footerText</key>
 			<string>This build was modified by mlgm based on the OwnGoal Studio edition.</string>
 		</dict>
 		<dict>
 			<key>cellClass</key>
-			<string>KayokoLinkCell</string>
+			<string>KayokoAboutLinkCell</string>
+			<key>id</key>
+			<string>AboutDeveloper</string>
 			<key>label</key>
-			<string>mlgm Personal Repo</string>
-			<key>subtitle</key>
-			<string>Sharing some tweaks and apps I use myself.</string>
+			<string>Developer</string>
 			<key>url</key>
-			<string>https://mlgm66.github.io</string>
-			<key>height</key>
-			<integer>54</integer>
+			<string>https://github.com/mlgm66</string>
+		</dict>
+		<dict>
+			<key>cellClass</key>
+			<string>KayokoAboutLinkCell</string>
+			<key>id</key>
+			<string>AboutX</string>
+			<key>label</key>
+			<string>X</string>
+			<key>url</key>
+			<string>https://x.com/mlgm66</string>
 		</dict>
 
 	</array>

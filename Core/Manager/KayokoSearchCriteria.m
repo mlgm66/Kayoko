@@ -5,18 +5,6 @@
 
 #import "KayokoSearchCriteria.h"
 
-NSString *const kKayokoSearchTokenTypeCategory = @"category";
-NSString *const kKayokoSearchTokenTypeApp = @"app";
-NSString *const kKayokoSearchTokenTypeTag = @"tag";
-
-NSString *const kKayokoSearchCategoryText = @"text";
-NSString *const kKayokoSearchCategoryLink = @"link";
-NSString *const kKayokoSearchCategoryPhone = @"phone";
-NSString *const kKayokoSearchCategoryDate = @"date";
-NSString *const kKayokoSearchCategoryAddress = @"address";
-NSString *const kKayokoSearchCategoryFlight = @"flight";
-NSString *const kKayokoSearchCategoryImage = @"image";
-
 @implementation KayokoSearchToken
 
 #pragma mark - Construction

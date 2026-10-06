@@ -6,6 +6,7 @@
 //
 
 #import "KayokoPasteboardManager.h"
+#import "KayokoCoreRuntime.h"
 #import "KayokoHistoryChangeNotifier.h"
 #import "KayokoHistoryRepository.h"
 #import "KayokoKeyboardHostResolver.h"
@@ -19,11 +20,14 @@
 
 #import <HBLog.h>
 #import <ImageIO/ImageIO.h>
+#import <QuartzCore/QuartzCore.h>
 #import <math.h>
 #import <roothide.h>
 
 static NSTimeInterval const kKayokoPasteboardWriteConfirmationTimeout = 0.25;
 static NSTimeInterval const kKayokoSimulatedAutomaticPasteDelay = 0.2;
+static NSTimeInterval const kKayokoSimulatedSearchPasteTimeout = 1.0;
+static NSTimeInterval const kKayokoSimulatedSearchPasteCheckInterval = 0.05;
 static NSString *const kKayokoRemoteClipboardPasteboardType = @"com.apple.is-remote-clipboard";
 static NSString *const kKayokoPasteboardManagerErrorDomain = @"com.mlgm.kayoko.pasteboard-manager";
 
@@ -34,6 +38,43 @@ static NSString *const kKayokoPasteboardManagerErrorDomain = @"com.mlgm.kayoko.p
 @interface UIApplication (Private)
 - (SBApplication *_Nullable)_accessibilityFrontMostApplication;
 @end
+
+@interface UIPeripheralHost : NSObject
++ (instancetype)sharedInstance;
++ (NSArray<NSValue *> *)allVisiblePeripheralFrames;
+- (BOOL)isOnScreen;
+@end
+
+@interface UIKeyboardImpl : NSObject
++ (instancetype)activeInstance;
+- (BOOL)hardwareKeyboardAttached;
+@end
+
+static BOOL kayokoKeyboardInputIsAvailable(void) {
+    Class hostClass = NSClassFromString(@"UIPeripheralHost");
+    if ([hostClass respondsToSelector:@selector(sharedInstance)] &&
+        [hostClass respondsToSelector:@selector(allVisiblePeripheralFrames)]) {
+        UIPeripheralHost *host = [(id)hostClass sharedInstance];
+        if ([host respondsToSelector:@selector(isOnScreen)] && [host isOnScreen]) {
+            NSArray<NSValue *> *frames = [(id)hostClass allVisiblePeripheralFrames];
+            if ([frames isKindOfClass:[NSArray class]]) {
+                for (NSValue *value in frames) {
+                    if ([value respondsToSelector:@selector(CGRectValue)]) {
+                        CGRect frame = [value CGRectValue];
+                        if (!CGRectIsNull(frame) && !CGRectIsEmpty(frame)) {
+                            return YES;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Class keyboardClass = NSClassFromString(@"UIKeyboardImpl");
+    UIKeyboardImpl *keyboard = [keyboardClass respondsToSelector:@selector(activeInstance)]
+                                  ? [(id)keyboardClass activeInstance] : nil;
+    return [keyboard respondsToSelector:@selector(hardwareKeyboardAttached)] && [keyboard hardwareKeyboardAttached];
+}
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -46,6 +87,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign, readonly) KayokoAutomaticPasteMode automaticPasteMode;
 @property(nonatomic, assign, readonly) NSUInteger token;
 @property(nonatomic, assign, readonly) NSUInteger previousChangeCount;
+@property(nonatomic, assign) BOOL requiresSearchFocusRestore;
+@property(nonatomic, copy, nullable) NSString *keyboardHostSceneIdentifier;
 
 #pragma mark - Expiration
 
@@ -114,6 +157,8 @@ NS_ASSUME_NONNULL_END
     _shouldAutoPaste = NO;
     _automaticPasteMode = kKayokoAutomaticPasteModeClassic;
     _previousChangeCount = 0;
+    _requiresSearchFocusRestore = NO;
+    _keyboardHostSceneIdentifier = nil;
 }
 
 - (void)cancelExpirationBlock {
@@ -264,6 +309,13 @@ NS_ASSUME_NONNULL_END
 
 - (void)enterMaintenanceModeUntilProcessExit {
     _maintenanceMode = YES;
+    if (@available(iOS 16, *)) {
+        dispatch_sync(_pasteboardQueue, ^{
+          [self cancelPendingPasteboardWrite];
+        });
+    } else {
+        [self cancelPendingPasteboardWrite];
+    }
     [_historyRepository closeStore];
 }
 
@@ -480,18 +532,18 @@ NS_ASSUME_NONNULL_END
 
 - (void)generalPasteboardDidChange:(NSNotification *)notification {
     (void)notification;
-    if ([_pendingPasteboardWrite isActive]) {
-        HBLogDebug(@"Kayoko: pending pasteboard write observed changed notification token=%lu changeCount=%lu",
-                   (unsigned long)[_pendingPasteboardWrite token], (unsigned long)[_pasteboard changeCount]);
-    }
+    dispatch_block_t resolve = ^{
+      if ([_pendingPasteboardWrite isActive]) {
+          HBLogDebug(@"Kayoko: pending pasteboard write observed changed notification token=%lu changeCount=%lu",
+                     (unsigned long)[_pendingPasteboardWrite token], (unsigned long)[_pasteboard changeCount]);
+      }
+      [self resolvePendingPasteboardWriteForToken:[_pendingPasteboardWrite token] didExpire:NO];
+    };
     if (@available(iOS 16, *)) {
-        dispatch_async(_pasteboardQueue, ^{
-          [self resolvePendingPasteboardWriteForToken:[_pendingPasteboardWrite token] didExpire:NO];
-        });
-        return;
+        dispatch_async(_pasteboardQueue, resolve);
+    } else {
+        resolve();
     }
-
-    [self resolvePendingPasteboardWriteForToken:[_pendingPasteboardWrite token] didExpire:NO];
 }
 
 - (BOOL)shouldIgnoreCurrentPasteboardChangeFromSourceBundleIdentifier:(NSString *)sourceBundleIdentifier {
@@ -857,6 +909,82 @@ forPasteboardItem:(KayokoPasteboardItem *)item
                            completion:completion];
 }
 
+- (void)replaceImageForPasteboardItem:(KayokoPasteboardItem *)item
+                   inHistoryWithKey:(NSString *)historyKey
+                      editedFileURL:(NSURL *)URL
+                         completion:(void (^)(KayokoPasteboardItem *updatedItem, NSError *error))completion {
+    if (_maintenanceMode || !item.imageName.length || !item.content.length || !historyKey.length || !URL.isFileURL) {
+        NSError *error = _maintenanceMode ? [self maintenanceModeError] :
+            [NSError errorWithDomain:kKayokoPasteboardManagerErrorDomain code:2
+                            userInfo:@{ NSLocalizedDescriptionKey : @"无效的图片编辑请求。" }];
+        if (completion) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+              completion(nil, error);
+            });
+        }
+        return;
+    }
+    [_historyRepository replaceImageForItemDictionary:item.dictionaryRepresentation
+                                        inHistoryKey:historyKey
+                                       editedFileURL:URL
+                                          completion:^(NSDictionary<NSString *, id> *updatedDictionary, NSError *error) {
+      KayokoPasteboardItem *updatedItem = [KayokoPasteboardItem itemFromDictionary:updatedDictionary];
+      if (updatedItem) {
+          [self resetThumbnailMemoryCache];
+          [self postHistoryChangedNotificationForHistoryKey:historyKey
+                                                 changeType:kKayokoPasteboardManagerHistoryChangeTypeReload
+                                             itemDictionary:updatedDictionary
+                                                      limit:[self limitForHistoryKey:historyKey]];
+      }
+      if (completion) completion(updatedItem, error);
+    }];
+}
+
+- (void)canRestoreImageForPasteboardItem:(KayokoPasteboardItem *)item
+                      inHistoryWithKey:(NSString *)historyKey
+                            completion:(void (^)(BOOL canRestore, NSError *error))completion {
+    if (_maintenanceMode || !item.imageName.length || !item.content.length || !historyKey.length) {
+        NSError *error = _maintenanceMode ? [self maintenanceModeError] : nil;
+        if (completion) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+              completion(NO, error);
+            });
+        }
+        return;
+    }
+    [_historyRepository canRestoreImageForItemDictionary:item.dictionaryRepresentation
+                                           inHistoryKey:historyKey completion:completion];
+}
+
+- (void)restoreOriginalImageForPasteboardItem:(KayokoPasteboardItem *)item
+                           inHistoryWithKey:(NSString *)historyKey
+                                 completion:(void (^)(KayokoPasteboardItem *updatedItem, NSError *error))completion {
+    if (_maintenanceMode || !item.imageName.length || !item.content.length || !historyKey.length) {
+        NSError *error = _maintenanceMode ? [self maintenanceModeError] :
+            [NSError errorWithDomain:kKayokoPasteboardManagerErrorDomain code:2
+                            userInfo:@{ NSLocalizedDescriptionKey : @"无效的图片复原请求。" }];
+        if (completion) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+              completion(nil, error);
+            });
+        }
+        return;
+    }
+    [_historyRepository restoreOriginalImageForItemDictionary:item.dictionaryRepresentation
+                                                inHistoryKey:historyKey
+                                                  completion:^(NSDictionary<NSString *, id> *updatedDictionary, NSError *error) {
+      KayokoPasteboardItem *updatedItem = [KayokoPasteboardItem itemFromDictionary:updatedDictionary];
+      if (updatedItem) {
+          [self resetThumbnailMemoryCache];
+          [self postHistoryChangedNotificationForHistoryKey:historyKey
+                                                 changeType:kKayokoPasteboardManagerHistoryChangeTypeReload
+                                             itemDictionary:updatedDictionary
+                                                      limit:[self limitForHistoryKey:historyKey]];
+      }
+      if (completion) completion(updatedItem, error);
+    }];
+}
+
 - (void)removeAllPasteboardItemsFromHistoryWithKey:(NSString *)historyKey
                                 shouldRemoveImages:(BOOL)shouldRemoveImages
                            postsChangeNotification:(BOOL)postsChangeNotification
@@ -953,13 +1081,19 @@ forPasteboardItem:(KayokoPasteboardItem *)item
     BOOL performsAutomaticPaste = [self automaticallyPaste] && allowsAutomaticPaste;
     KayokoAutomaticPasteMode automaticPasteMode =
         performsAutomaticPaste ? [self resolvedAutomaticPasteMode] : kKayokoAutomaticPasteModeClassic;
+    BOOL requiresSearchFocusRestore = performsAutomaticPaste && automaticPasteMode == kKayokoAutomaticPasteModeSimulated &&
+                                     [[KayokoCoreRuntime sharedRuntime] searchActive];
+    NSString *keyboardHostSceneIdentifier = requiresSearchFocusRestore
+        ? [[[KayokoKeyboardHostResolver sharedResolver] effectiveExternalKeyboardHostContext] identifier] : nil;
     if (@available(iOS 16, *)) {
         dispatch_async(_pasteboardQueue, ^{
           [self _reallyWritePasteboardItem:pasteboardItem
                          sourceHistoryItem:sourceHistoryItem
                         fromHistoryWithKey:historyKey
                            shouldAutoPaste:performsAutomaticPaste
-                        automaticPasteMode:automaticPasteMode];
+                        automaticPasteMode:automaticPasteMode
+                requiresSearchFocusRestore:requiresSearchFocusRestore
+               keyboardHostSceneIdentifier:keyboardHostSceneIdentifier];
         });
         return;
     }
@@ -968,7 +1102,9 @@ forPasteboardItem:(KayokoPasteboardItem *)item
                    sourceHistoryItem:sourceHistoryItem
                   fromHistoryWithKey:historyKey
                      shouldAutoPaste:performsAutomaticPaste
-                  automaticPasteMode:automaticPasteMode];
+                  automaticPasteMode:automaticPasteMode
+          requiresSearchFocusRestore:requiresSearchFocusRestore
+         keyboardHostSceneIdentifier:keyboardHostSceneIdentifier];
 }
 
 - (BOOL)copyPasteboardItemToPasteboard:(KayokoPasteboardItem *)item {
@@ -1006,7 +1142,9 @@ forPasteboardItem:(KayokoPasteboardItem *)item
                  sourceHistoryItem:(KayokoPasteboardItem *)sourceHistoryItem
                 fromHistoryWithKey:(NSString *)historyKey
                    shouldAutoPaste:(BOOL)shouldAutoPaste
-                automaticPasteMode:(KayokoAutomaticPasteMode)automaticPasteMode {
+                automaticPasteMode:(KayokoAutomaticPasteMode)automaticPasteMode
+        requiresSearchFocusRestore:(BOOL)requiresSearchFocusRestore
+       keyboardHostSceneIdentifier:(nullable NSString *)keyboardHostSceneIdentifier {
     if (_isWritingPasteboardItem) {
         HBLogDebug(@"Kayoko: pasteboard item write ignored because another write is in progress");
         return;
@@ -1032,6 +1170,8 @@ forPasteboardItem:(KayokoPasteboardItem *)item
         NSUInteger token = [self beginPendingPasteboardWriteAfterChangeCount:previousChangeCount
                                                              shouldAutoPaste:shouldAutoPaste
                                                           automaticPasteMode:automaticPasteMode];
+        [_pendingPasteboardWrite setRequiresSearchFocusRestore:requiresSearchFocusRestore];
+        [_pendingPasteboardWrite setKeyboardHostSceneIdentifier:keyboardHostSceneIdentifier];
         [self resolvePendingPasteboardWriteForToken:token didExpire:NO];
     } else {
         HBLogDebug(@"Kayoko: pasteboard item write did not update pasteboard previousChangeCount=%lu",
@@ -1090,6 +1230,8 @@ forPasteboardItem:(KayokoPasteboardItem *)item
 
     BOOL shouldAutoPaste = [_pendingPasteboardWrite shouldAutoPaste];
     KayokoAutomaticPasteMode automaticPasteMode = [_pendingPasteboardWrite automaticPasteMode];
+    BOOL requiresSearchFocusRestore = [_pendingPasteboardWrite requiresSearchFocusRestore];
+    NSString *keyboardHostSceneIdentifier = [_pendingPasteboardWrite keyboardHostSceneIdentifier];
     _lastChangeCount = currentChangeCount;
     [self cancelPendingPasteboardWrite];
 
@@ -1098,26 +1240,34 @@ forPasteboardItem:(KayokoPasteboardItem *)item
                (unsigned long)token, (unsigned long)currentChangeCount, shouldAutoPaste ? @"YES" : @"NO",
                (unsigned long)automaticPasteMode);
     if (shouldAutoPaste) {
-        [self performAutomaticPasteForToken:token automaticPasteMode:automaticPasteMode];
+        [self performAutomaticPasteForToken:[_pendingPasteboardWrite token]
+                        automaticPasteMode:automaticPasteMode
+                                changeCount:currentChangeCount
+                 requiresSearchFocusRestore:requiresSearchFocusRestore
+                keyboardHostSceneIdentifier:keyboardHostSceneIdentifier];
     }
 
     return YES;
 }
 
 - (void)performAutomaticPasteForToken:(NSUInteger)token
-                   automaticPasteMode:(KayokoAutomaticPasteMode)automaticPasteMode {
+                   automaticPasteMode:(KayokoAutomaticPasteMode)automaticPasteMode
+                           changeCount:(NSUInteger)changeCount
+            requiresSearchFocusRestore:(BOOL)requiresSearchFocusRestore
+           keyboardHostSceneIdentifier:(nullable NSString *)keyboardHostSceneIdentifier {
     if (automaticPasteMode == kKayokoAutomaticPasteModeSimulated) {
-        HBLogDebug(@"Kayoko: scheduling simulated Cmd+V automatic paste token=%lu delay=%.2f", (unsigned long)token,
-                   kKayokoSimulatedAutomaticPasteDelay);
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kKayokoSimulatedAutomaticPasteDelay * NSEC_PER_SEC)),
+        if (requiresSearchFocusRestore && [keyboardHostSceneIdentifier length] == 0) {
+            return;
+        }
+        NSTimeInterval delay = requiresSearchFocusRestore ? 0 : kKayokoSimulatedAutomaticPasteDelay;
+        CFTimeInterval deadline = CACurrentMediaTime() + kKayokoSimulatedSearchPasteTimeout;
+        NSString *requiredSceneIdentifier = requiresSearchFocusRestore ? keyboardHostSceneIdentifier : nil;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
-                         CFNotificationCenterPostNotification(
-                             CFNotificationCenterGetDarwinNotifyCenter(),
-                             (__bridge CFStringRef)kKayokoNotificationKeyPasteWillStart, nil, nil, YES);
-                         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-                                                              (__bridge CFStringRef)kKayokoNotificationKeyPasteFeedback,
-                                                              nil, nil, YES);
-                         [[KayokoKeyboardShortcutSender sharedSender] sendCommandV];
+                         [self attemptSimulatedPasteForToken:token
+                                                changeCount:changeCount
+                                keyboardHostSceneIdentifier:requiredSceneIdentifier
+                                                   deadline:deadline];
                        });
         return;
     }
@@ -1125,6 +1275,66 @@ forPasteboardItem:(KayokoPasteboardItem *)item
     HBLogDebug(@"Kayoko: posting helper paste notification token=%lu", (unsigned long)token);
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
                                          (__bridge CFStringRef)kKayokoNotificationKeyHelperPaste, nil, nil, NO);
+}
+
+- (BOOL)validateSimulatedPasteForToken:(NSUInteger)token
+                         changeCount:(NSUInteger)changeCount
+                              consume:(BOOL)consume {
+    __block BOOL valid = NO;
+    dispatch_block_t validate = ^{
+      valid = [_pendingPasteboardWrite token] == token && [_pasteboard changeCount] == changeCount;
+      if (valid && consume) {
+          [self cancelPendingPasteboardWrite];
+      }
+    };
+    if (@available(iOS 16, *)) {
+        dispatch_sync(_pasteboardQueue, validate);
+    } else {
+        validate();
+    }
+    return valid;
+}
+
+- (void)attemptSimulatedPasteForToken:(NSUInteger)token
+                         changeCount:(NSUInteger)changeCount
+         keyboardHostSceneIdentifier:(nullable NSString *)keyboardHostSceneIdentifier
+                            deadline:(CFTimeInterval)deadline {
+    if (![self validateSimulatedPasteForToken:token changeCount:changeCount consume:NO]) {
+        return;
+    }
+
+    if (keyboardHostSceneIdentifier) {
+        if (CACurrentMediaTime() >= deadline) {
+            return;
+        }
+        KayokoKeyboardHostContext *context = [[KayokoKeyboardHostResolver sharedResolver] currentKeyboardHostContext];
+        BOOL ready = ![[KayokoCoreRuntime sharedRuntime] panelVisible] && context && ![context isCached] &&
+                     ![context isKayokoOwned] && [[context identifier] isEqualToString:keyboardHostSceneIdentifier] &&
+                     kayokoKeyboardInputIsAvailable();
+        if (!ready) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+                                         (int64_t)(kKayokoSimulatedSearchPasteCheckInterval * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                             [self attemptSimulatedPasteForToken:token
+                                                    changeCount:changeCount
+                                    keyboardHostSceneIdentifier:keyboardHostSceneIdentifier
+                                                       deadline:deadline];
+                           });
+            return;
+        }
+    }
+
+    if (![self validateSimulatedPasteForToken:token changeCount:changeCount consume:YES]) {
+        return;
+    }
+    if (keyboardHostSceneIdentifier && CACurrentMediaTime() >= deadline) {
+        return;
+    }
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                         (__bridge CFStringRef)kKayokoNotificationKeyPasteWillStart, nil, nil, YES);
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                         (__bridge CFStringRef)kKayokoNotificationKeyPasteFeedback, nil, nil, YES);
+    [[KayokoKeyboardShortcutSender sharedSender] sendCommandV];
 }
 
 - (KayokoAutomaticPasteMode)resolvedAutomaticPasteMode {

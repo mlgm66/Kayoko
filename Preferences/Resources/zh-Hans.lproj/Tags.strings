@@ -2,7 +2,6 @@
 "Blue" = "蓝色";
 "Cancel" = "取消";
 "Color" = "颜色";
-"Custom Tags…" = "自定义标签…";
 "Delete" = "删除";
 "Deselect All" = "取消全选";
 "Done" = "完成";
@@ -23,3 +22,19 @@
 "Unable to Save Tags" = "无法保存标签";
 "Untitled" = "未命名";
 "Yellow" = "黄色";
+"Tag Management" = "标签管理";
+"Tag Row Order" = "标签行顺序";
+"Tags Within Each Row" = "行内标签顺序";
+"Category Tags" = "类别标签";
+"Application Tags" = "应用标签";
+"Custom Tags" = "自定义标签";
+"Drag the handles to change the order of the three rows." = "拖动右侧把手，调整三行的上下顺序。";
+"Open a tag group to change its left-to-right order." = "进入对应标签，调整该行内的左右顺序。";
+"Drag the handles. Tags at the top appear on the left." = "拖动右侧把手，列表靠前的标签会显示在该行左侧。";
+"Changes are saved automatically. Reopen the panel to see them." = "调整后自动保存，重新打开面板即可查看。";
+"Only applications with clipboard records are listed. New applications are added at the end." = "仅列出有剪贴记录的应用。新出现的应用追加在末尾。";
+"No Application Tags" = "暂无应用标签。有剪贴记录的应用会显示在这里。";
+"Loading Applications…" = "正在读取应用…";
+"Unable to Load Application Tags" = "无法读取应用标签";
+"Unable to Save Tag Order" = "无法保存标签顺序";
+"%@ items" = "%@ 项";

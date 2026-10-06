@@ -260,6 +260,10 @@ NS_ASSUME_NONNULL_END
     return self.mainViewController && ![self.mainViewController isHidden];
 }
 
+- (BOOL)searchActive {
+    return self.panelVisible && [self.mainViewController isFullscreenSearchActive];
+}
+
 - (BOOL)fullscreenSearchActive {
     if (!self.panelVisible) {
         return NO;
@@ -457,6 +461,14 @@ NS_ASSUME_NONNULL_END
     }
 
     [self handleMainPanelDidHide];
+}
+
+- (void)mainViewControllerDidFinishImageEditing:(KayokoMainViewController *)viewController {
+    if (viewController != self.mainViewController || [viewController isHidden]) {
+        return;
+    }
+    [self applyHeightPreferenceToViewApplyingWhenHidden:NO];
+    [[viewController view] layoutIfNeeded];
 }
 
 - (BOOL)prepareCompactLandscapeHost {

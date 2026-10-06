@@ -6,6 +6,8 @@
 #import "KayokoSearchTokenListViewController.h"
 
 #import "KayokoApplicationMetadataProvider.h"
+#import "KayokoFilterOrderStore.h"
+#import "KayokoPreferenceKeys.h"
 #import "KayokoPasteboardManager.h"
 #import "KayokoSearchCriteria.h"
 #import "KayokoSearchTokenCollectionView.h"
@@ -28,6 +30,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 #pragma mark - Data
 
+@property(nonatomic, copy) NSArray<NSString *> *sectionOrder;
 @property(nonatomic, strong) NSArray<KayokoSearchToken *> *categoryTokens;
 @property(nonatomic, strong) NSArray<KayokoSearchToken *> *tagTokens;
 @property(nonatomic, strong) NSArray<KayokoSearchToken *> *appTokens;
@@ -52,7 +55,8 @@ NS_ASSUME_NONNULL_END
     self = [super initWithNibName:nil bundle:nil];
     if (self) {
         _searchCriteria = [KayokoSearchCriteria emptyCriteria];
-        _categoryTokens = [self newCategoryTokens];
+        _sectionOrder = KayokoFilterSectionIdentifiers();
+        _categoryTokens = [self newCategoryTokensWithIdentifiers:KayokoFilterCategoryIdentifiers()];
         _tagTokens = @[];
         _appTokens = @[];
         _metadataProvider = [[KayokoApplicationMetadataProvider alloc] init];
@@ -100,38 +104,40 @@ NS_ASSUME_NONNULL_END
 
 #pragma mark - Token Sources
 
-- (NSArray<KayokoSearchToken *> *)newCategoryTokens {
+- (NSArray<KayokoSearchToken *> *)newCategoryTokensWithIdentifiers:(NSArray<NSString *> *)identifiers {
     NSBundle *bundle = [KayokoPasteboardManager localizationBundle];
-    return @[
-        [KayokoSearchToken tokenWithType:kKayokoSearchTokenTypeCategory
-                                   value:kKayokoSearchCategoryText
-                                   title:[bundle localizedStringForKey:@"Text" value:nil table:@"Tweak"]
-                               imageName:@"text.alignleft"],
-        [KayokoSearchToken tokenWithType:kKayokoSearchTokenTypeCategory
-                                   value:kKayokoSearchCategoryLink
-                                   title:[bundle localizedStringForKey:@"Links" value:nil table:@"Tweak"]
-                               imageName:@"link"],
-        [KayokoSearchToken tokenWithType:kKayokoSearchTokenTypeCategory
-                                   value:kKayokoSearchCategoryImage
-                                   title:[bundle localizedStringForKey:@"Images" value:nil table:@"Tweak"]
-                               imageName:@"photo.fill"],
-        [KayokoSearchToken tokenWithType:kKayokoSearchTokenTypeCategory
-                                   value:kKayokoSearchCategoryPhone
-                                   title:[bundle localizedStringForKey:@"Phone Numbers" value:nil table:@"Tweak"]
-                               imageName:@"phone.fill"],
-        [KayokoSearchToken tokenWithType:kKayokoSearchTokenTypeCategory
-                                   value:kKayokoSearchCategoryDate
-                                   title:[bundle localizedStringForKey:@"Dates" value:nil table:@"Tweak"]
-                               imageName:@"calendar"],
-        [KayokoSearchToken tokenWithType:kKayokoSearchTokenTypeCategory
-                                   value:kKayokoSearchCategoryFlight
-                                   title:[bundle localizedStringForKey:@"Flights" value:nil table:@"Tweak"]
-                               imageName:@"airplane"],
-        [KayokoSearchToken tokenWithType:kKayokoSearchTokenTypeCategory
-                                   value:kKayokoSearchCategoryAddress
-                                   title:[bundle localizedStringForKey:@"Addresses" value:nil table:@"Tweak"]
-                               imageName:@"mappin.and.ellipse"]
-    ];
+    NSMutableArray *tokens = [NSMutableArray array];
+    for (NSString *identifier in identifiers) {
+        NSDictionary *metadata = KayokoFilterCategoryMetadata(identifier);
+        [tokens addObject:[KayokoSearchToken tokenWithType:kKayokoSearchTokenTypeCategory
+                                                     value:identifier
+                                                     title:[bundle localizedStringForKey:metadata[@"title"] value:nil table:@"Tweak"]
+                                                 imageName:metadata[@"image"]]];
+    }
+    return tokens;
+}
+
+- (void)applyFilterOrder:(KayokoFilterOrderStore *)orderStore {
+    NSArray *sectionOrder = [orderStore orderedIdentifiers:KayokoFilterSectionIdentifiers()
+                                                  forKey:kKayokoPreferenceKeyFilterSectionOrder];
+    NSArray *categoryIdentifiers = [orderStore orderedIdentifiers:KayokoFilterCategoryIdentifiers()
+                                                         forKey:kKayokoPreferenceKeyFilterCategoryOrder];
+    NSArray *categoryTokens = [self newCategoryTokensWithIdentifiers:categoryIdentifiers];
+    BOOL sectionsChanged = ![[self sectionOrder] isEqualToArray:sectionOrder];
+    BOOL categoriesChanged = ![self tokenArray:[self categoryTokens] isDisplayEqualToTokenArray:categoryTokens];
+    [self setSectionOrder:sectionOrder];
+    [self setCategoryTokens:categoryTokens];
+    if (![self isViewLoaded]) {
+        return;
+    }
+    if (categoriesChanged) {
+        [self setNeedsCategoryContentOffsetReset:YES];
+        [[[self categorySectionView] collectionView] reloadData];
+    }
+    if (sectionsChanged || categoriesChanged) {
+        [[self view] setNeedsLayout];
+        [self notifyContentHeightIfNeeded];
+    }
 }
 
 #pragma mark - State
@@ -338,69 +344,56 @@ NS_ASSUME_NONNULL_END
     [self notifyContentHeightIfNeeded];
 }
 
+- (NSArray<NSString *> *)orderedVisibleSectionIdentifiers {
+    NSMutableArray *sections = [NSMutableArray array];
+    for (NSString *identifier in [self sectionOrder]) {
+        if ([identifier isEqualToString:kKayokoSearchTokenTypeCategory] && [self showsCategorySection]) {
+            [sections addObject:identifier];
+        } else if ([identifier isEqualToString:kKayokoSearchTokenTypeTag] && [self showsTagSection]) {
+            [sections addObject:identifier];
+        } else if ([identifier isEqualToString:kKayokoSearchTokenTypeApp] && [self showsAppSection]) {
+            [sections addObject:identifier];
+        }
+    }
+    return sections;
+}
+
+- (CGFloat)heightForSectionIdentifier:(NSString *)identifier width:(CGFloat)width {
+    if ([identifier isEqualToString:kKayokoSearchTokenTypeCategory]) {
+        return [KayokoSearchTokenSectionView preferredHeight];
+    }
+    BOOL tagSection = [identifier isEqualToString:kKayokoSearchTokenTypeTag];
+    NSUInteger count = tagSection ? [[self tagTokens] count] : [[self appTokens] count];
+    BOOL horizontal = tagSection ? [self usesHorizontalScrollingLayoutForTagSection] :
+                                  [self usesHorizontalScrollingLayoutForAppSection];
+    return [KayokoSearchTokenSectionView preferredHeightForItemCount:count width:width horizontalScrollingLayout:horizontal];
+}
+
 - (CGFloat)preferredContentHeightForWidth:(CGFloat)width {
-    (void)width;
-    BOOL showsCategory = [self showsCategorySection];
-    BOOL showsTag = [self showsTagSection];
-    BOOL showsApp = [self showsAppSection];
-    if (!showsCategory && !showsTag && !showsApp) {
+    NSArray *sections = [self orderedVisibleSectionIdentifiers];
+    if ([sections count] == 0) {
         return 0;
     }
-
-    CGFloat height = kKayokoSearchTokenTopInset + kKayokoSearchTokenBottomInset;
-    BOOL didAddSection = NO;
-    if (showsCategory) {
-        height += [KayokoSearchTokenSectionView preferredHeight];
-        didAddSection = YES;
-    }
-    if (showsTag) {
-        if (didAddSection) {
-            height += kKayokoSearchTokenSectionSpacing;
-        }
-        height += [KayokoSearchTokenSectionView
-            preferredHeightForItemCount:[[self tagTokens] count]
-                                  width:width
-              horizontalScrollingLayout:[self usesHorizontalScrollingLayoutForTagSection]];
-        didAddSection = YES;
-    }
-    if (showsApp) {
-        if (didAddSection) {
-            height += kKayokoSearchTokenSectionSpacing;
-        }
-        height += [KayokoSearchTokenSectionView
-            preferredHeightForItemCount:[[self appTokens] count]
-                                  width:width
-              horizontalScrollingLayout:[self usesHorizontalScrollingLayoutForAppSection]];
+    CGFloat height = kKayokoSearchTokenTopInset + kKayokoSearchTokenBottomInset +
+                     ([sections count] - 1) * kKayokoSearchTokenSectionSpacing;
+    for (NSString *identifier in sections) {
+        height += [self heightForSectionIdentifier:identifier width:width];
     }
     return height;
 }
 
 - (void)layoutSectionsForWidth:(CGFloat)width {
-    CGFloat y = 0;
-    BOOL didLayoutSection = NO;
-    if ([self showsCategorySection]) {
-        y += kKayokoSearchTokenTopInset;
-        CGFloat sectionHeight = [KayokoSearchTokenSectionView preferredHeight];
-        [[self categorySectionView] setFrame:CGRectMake(0, y, width, sectionHeight)];
-        [[self categorySectionView] layoutIfNeeded];
-        y += sectionHeight;
-        didLayoutSection = YES;
-    }
-    if ([self showsTagSection]) {
-        [self configureTagSectionForWidth:width];
-        y += didLayoutSection ? kKayokoSearchTokenSectionSpacing : kKayokoSearchTokenTopInset;
-        CGFloat sectionHeight = [[self tagSectionView] preferredHeight];
-        [[self tagSectionView] setFrame:CGRectMake(0, y, width, sectionHeight)];
-        [[self tagSectionView] layoutIfNeeded];
-        y += sectionHeight;
-        didLayoutSection = YES;
-    }
-    if ([self showsAppSection]) {
-        [self configureAppSectionForWidth:width];
-        y += didLayoutSection ? kKayokoSearchTokenSectionSpacing : kKayokoSearchTokenTopInset;
-        CGFloat sectionHeight = [[self appSectionView] preferredHeight];
-        [[self appSectionView] setFrame:CGRectMake(0, y, width, sectionHeight)];
-        [[self appSectionView] layoutIfNeeded];
+    [self configureTagSectionForWidth:width];
+    [self configureAppSectionForWidth:width];
+    CGFloat y = kKayokoSearchTokenTopInset;
+    for (NSString *identifier in [self orderedVisibleSectionIdentifiers]) {
+        KayokoSearchTokenSectionView *section = [identifier isEqualToString:kKayokoSearchTokenTypeCategory] ?
+            [self categorySectionView] : [identifier isEqualToString:kKayokoSearchTokenTypeTag] ?
+            [self tagSectionView] : [self appSectionView];
+        CGFloat height = [self heightForSectionIdentifier:identifier width:width];
+        [section setFrame:CGRectMake(0, y, width, height)];
+        [section layoutIfNeeded];
+        y += height + kKayokoSearchTokenSectionSpacing;
     }
 }
 

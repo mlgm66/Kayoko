@@ -25,10 +25,13 @@ static CGFloat const kKayokoSegmentBottomInset = 10;
 @property(nonatomic, strong, readwrite) UIButton *leadingButton;
 @property(nonatomic, strong, readwrite) UIButton *editButton;
 @property(nonatomic, strong) UIStackView *trailingButtonStack;
+@property(nonatomic, copy) NSArray<NSLayoutConstraint *> *trailingButtonWidthConstraints;
 @property(nonatomic, strong, readwrite) UIButton *trailingButton;
 @property(nonatomic, strong, readwrite) UIButton *alternateTrailingButton;
+@property(nonatomic, strong, readwrite) UIButton *openLinkButton;
 @property(nonatomic, strong, readwrite) UIButton *selectionActionButton;
 @property(nonatomic, strong, readwrite) UIButton *translationButton;
+@property(nonatomic, strong, readwrite) UIButton *bookButton;
 @property(nonatomic, strong, readwrite) UIButton *shareButton;
 @property(nonatomic, strong, readwrite) UISegmentedControl *historySegmentedControl;
 
@@ -127,14 +130,34 @@ static CGFloat const kKayokoSegmentBottomInset = 10;
         [_trailingButtonStack addArrangedSubview:_translationButton];
         [_translationButton setTranslatesAutoresizingMaskIntoConstraints:NO];
 
+        _bookButton = [[UIButton alloc] init];
+        [_bookButton setHidden:YES];
+        [_trailingButtonStack addArrangedSubview:_bookButton];
+        [_bookButton setTranslatesAutoresizingMaskIntoConstraints:NO];
+
         _shareButton = [[UIButton alloc] init];
         [_shareButton setHidden:YES];
         [_trailingButtonStack addArrangedSubview:_shareButton];
         [_shareButton setTranslatesAutoresizingMaskIntoConstraints:NO];
 
+        _openLinkButton = [[UIButton alloc] init];
+        [_openLinkButton setHidden:YES];
+        [_trailingButtonStack addArrangedSubview:_openLinkButton];
+        [_openLinkButton setTranslatesAutoresizingMaskIntoConstraints:NO];
+
         _trailingButton = [[UIButton alloc] init];
         [_trailingButtonStack addArrangedSubview:_trailingButton];
         [_trailingButton setTranslatesAutoresizingMaskIntoConstraints:NO];
+
+        NSMutableArray<NSLayoutConstraint *> *buttonWidthConstraints = [[NSMutableArray alloc] init];
+        for (UIView *button in [_trailingButtonStack arrangedSubviews]) {
+            NSLayoutConstraint *widthConstraint = [[button widthAnchor] constraintEqualToConstant:32];
+            [widthConstraint setPriority:UILayoutPriorityRequired - 1];
+            [buttonWidthConstraints addObject:widthConstraint];
+            [[[button heightAnchor] constraintEqualToConstant:32] setActive:YES];
+        }
+        _trailingButtonWidthConstraints = [buttonWidthConstraints copy];
+        [NSLayoutConstraint activateConstraints:_trailingButtonWidthConstraints];
 
         _titleTapControl = [[UIControl alloc] init];
         [_titleTapControl setBackgroundColor:[UIColor clearColor]];
@@ -166,18 +189,6 @@ static CGFloat const kKayokoSegmentBottomInset = 10;
             [[_trailingButtonStack centerYAnchor] constraintEqualToAnchor:[_leadingButton centerYAnchor]],
             [[_trailingButtonStack trailingAnchor] constraintEqualToAnchor:[self trailingAnchor] constant:-16],
             [[_trailingButtonStack heightAnchor] constraintEqualToConstant:32],
-            [[_editButton widthAnchor] constraintEqualToConstant:32],
-            [[_editButton heightAnchor] constraintEqualToConstant:32],
-            [[_selectionActionButton widthAnchor] constraintEqualToConstant:32],
-            [[_selectionActionButton heightAnchor] constraintEqualToConstant:32],
-            [[_alternateTrailingButton widthAnchor] constraintEqualToConstant:32],
-            [[_alternateTrailingButton heightAnchor] constraintEqualToConstant:32],
-            [[_translationButton widthAnchor] constraintEqualToConstant:32],
-            [[_translationButton heightAnchor] constraintEqualToConstant:32],
-            [[_shareButton widthAnchor] constraintEqualToConstant:32],
-            [[_shareButton heightAnchor] constraintEqualToConstant:32],
-            [[_trailingButton widthAnchor] constraintEqualToConstant:32],
-            [[_trailingButton heightAnchor] constraintEqualToConstant:32],
             [[_titleLabel trailingAnchor] constraintLessThanOrEqualToAnchor:[_trailingButtonStack leadingAnchor]
                                                                       constant:-kKayokoTitleTapControlTrailingSpacing],
             [[_titleTapControl leadingAnchor] constraintEqualToAnchor:[_titleLabel leadingAnchor]],
@@ -193,11 +204,24 @@ static CGFloat const kKayokoSegmentBottomInset = 10;
     return self;
 }
 
-- (void)setTitleText:(NSString *)title {
-    if ([title length] == 0) {
-        return;
+- (void)layoutSubviews {
+    NSUInteger visibleCount = 0;
+    for (UIView *button in [[self trailingButtonStack] arrangedSubviews]) {
+        if (![button isHidden]) visibleCount++;
     }
+    CGFloat availableWidth = CGRectGetWidth([self bounds]) - 16 - kKayokoTitleLabelLeadingInset -
+                             kKayokoTitleTapControlTrailingSpacing;
+    CGFloat buttonWidth = visibleCount > 0 ? MIN(32, MAX(0, availableWidth) / visibleCount) : 32;
+    for (NSLayoutConstraint *constraint in [self trailingButtonWidthConstraints]) {
+        [constraint setConstant:buttonWidth];
+    }
+    CGFloat spacing = visibleCount > 1 ?
+        MAX(0, MIN(12, (availableWidth - visibleCount * buttonWidth) / (visibleCount - 1))) : 12;
+    [[self trailingButtonStack] setSpacing:spacing];
+    [super layoutSubviews];
+}
 
+- (void)setTitleText:(NSString *)title {
     [[self titleLabel] setText:title];
     [[self titleTapControl] setAccessibilityLabel:title];
 }

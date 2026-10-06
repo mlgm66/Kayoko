@@ -13,7 +13,6 @@
 "Auto Promote" = "自动置顶";
 "Automatically Paste" = "自动粘贴";
 "Behaviors" = "行为";
-"CUSTOM_TAGS" = "自定义标签…";
 "Cancel" = "取消";
 "Choose how much text each clipboard item shows in the list. More lines make items easier to identify, but show fewer items at once." = "选择列表中每个剪贴板条目显示多少文字。行数越多越容易辨认内容，但同屏可见的条目会更少。";
 "Choose when a tapped item moves to the top. “History Only” keeps Favorites in your chosen order while still surfacing recently used history items." = "选择点选条目后何时将它移到顶部。“仅历史记录” 会保留收藏夹的现有顺序，同时让最近使用的历史记录浮到前面。";
@@ -53,8 +52,8 @@
 "Please check the following: open Zebra → select the Sources tab → tap Havoc → make sure it is signed in" = "请按如下步骤检查：打开 Zebra → 选择 “软件源” 标签页 → 点选 “Havoc” → 检查是否处于已登录状态";
 "Please check the following: open Zebra → select the Sources tab → tap Havoc → tap My Account in the top-right corner → make sure Kayoko is in your purchases" = "请按如下步骤检查：打开 Zebra → 选择 “软件源” 标签页 → 点选 “Havoc” → 点选界面右上角 “我的帐户” → 检查已购列表中是否有 Kayoko";
 "Prediction Bar" = "预测栏";
-"Preview" = "预览";
-"Preview Lines" = "预览行数";
+"Content Display" = "内容显示";
+"Display Lines" = "显示行数";
 "Previous" = "先前的选择";
 "Purchase Kayoko on Havoc Marketplace to support ongoing OwnGoal Studio maintenance." = "在浩劫商店购买 Kayoko，支持乌龙工作室版后续的维护";
 "Respring" = "注销";
@@ -64,7 +63,6 @@
 "Save Images" = "保存图像";
 "Save Text" = "保存文本";
 "Server returned an invalid response. Tap the screen to retry: %@" = "服务器返回了无效的响应，轻点屏幕以重试：%@";
-"Sharing some tweaks and apps I use myself." = "个人源 · 收录我常用的工具";
 "Show Kayoko" = "显示 Kayoko";
 "Single Line" = "单行";
 "Swipe to Select Words" = "滑动选词";
@@ -87,5 +85,8 @@
 "View Priority" = "视图优先级";
 "When enabled, long-press a text item in History or Favorites to enter word selection mode. Tap a word to select it, then drag across words to extend or reduce the selection." = "开启后，长按历史记录或收藏中的文本条目即可进入滑动选词模式。轻点词语可选中，然后在词语间滑动来扩展或缩小选区。";
 "Wishing on a star…" = "在星星上许个愿…";
-"mlgm Personal Repo" = "mlgm个人源";
 "⌘⇧V External Keyboard" = "⌘⇧V 外接键盘";
+"TAG_MANAGEMENT" = "标签管理";
+"About" = "关于";
+"Developer" = "开发者";
+"X" = "X";

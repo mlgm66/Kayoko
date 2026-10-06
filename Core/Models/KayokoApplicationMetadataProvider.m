@@ -4,15 +4,13 @@
 //
 
 #import "KayokoApplicationMetadataProvider.h"
-#import "KayokoPasteboardItem.h"
+#import "KayokoFilterCatalog.h"
 #import "KayokoPasteboardManager.h"
 
 #import <objc/runtime.h>
 
 static int const kKayokoApplicationIconFormatListRow = 1;
 static int const kKayokoApplicationIconFormatSearchToken = 5;
-static NSString *const kKayokoSpotlightBundleIdentifier = @"com.apple.Spotlight";
-static NSString *const kKayokoSpringBoardBundleIdentifier = @"com.apple.springboard";
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -40,20 +38,9 @@ NS_ASSUME_NONNULL_END
 @implementation KayokoApplicationMetadataProvider
 
 - (NSString *)displayNameForBundleIdentifier:(NSString *)bundleIdentifier {
-    if ([self isContinuityBundleIdentifier:bundleIdentifier]) {
-        return [[KayokoPasteboardManager localizationBundle] localizedStringForKey:@"Continuity"
-                                                                             value:nil
-                                                                             table:@"Tweak"];
-    }
-
-    if ([self isSpotlightBundleIdentifier:bundleIdentifier]) {
-        return [[KayokoPasteboardManager localizationBundle] localizedStringForKey:@"Spotlight"
-                                                                             value:nil
-                                                                             table:@"Tweak"];
-    }
-
-    if ([self isSpringBoardBundleIdentifier:bundleIdentifier]) {
-        return [[KayokoPasteboardManager localizationBundle] localizedStringForKey:@"SpringBoard"
+    NSDictionary *special = KayokoFilterSpecialApplicationMetadata(bundleIdentifier);
+    if (special) {
+        return [[KayokoPasteboardManager localizationBundle] localizedStringForKey:special[@"title"]
                                                                              value:nil
                                                                              table:@"Tweak"];
     }
@@ -62,82 +49,15 @@ NS_ASSUME_NONNULL_END
     return [displayName length] > 0 ? displayName : bundleIdentifier;
 }
 
-- (BOOL)isContinuityBundleIdentifier:(NSString *)bundleIdentifier {
-    NSString *normalizedBundleIdentifier = [[bundleIdentifier
-        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
-    return [normalizedBundleIdentifier isEqualToString:kKayokoContinuityBundleIdentifier] ||
-           [normalizedBundleIdentifier isEqualToString:@"continuity"] ||
-           [normalizedBundleIdentifier isEqualToString:@"handoff"];
-}
-
-- (BOOL)isSpotlightBundleIdentifier:(NSString *)bundleIdentifier {
-    NSString *normalizedBundleIdentifier = [[bundleIdentifier
-        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
-    return [normalizedBundleIdentifier isEqualToString:[kKayokoSpotlightBundleIdentifier lowercaseString]] ||
-           [normalizedBundleIdentifier isEqualToString:@"spotlight"];
-}
-
 - (nullable SBApplication *)applicationForBundleIdentifier:(NSString *)bundleIdentifier {
     return [[objc_getClass("SBApplicationController") sharedInstance] applicationWithBundleIdentifier:bundleIdentifier];
 }
 
-- (BOOL)isSpringBoardBundleIdentifier:(NSString *)bundleIdentifier {
-    NSString *normalizedBundleIdentifier = [[bundleIdentifier
-        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
-    return [normalizedBundleIdentifier isEqualToString:kKayokoSpringBoardBundleIdentifier] ||
-           [normalizedBundleIdentifier isEqualToString:@"springboard"];
-}
-
 - (BOOL)hasApplicationForBundleIdentifier:(NSString *)bundleIdentifier {
-    if ([self isContinuityBundleIdentifier:bundleIdentifier]) {
-        return YES;
-    }
-    if ([self isSpotlightBundleIdentifier:bundleIdentifier]) {
-        return YES;
-    }
-    if ([self isSpringBoardBundleIdentifier:bundleIdentifier]) {
+    if (KayokoFilterSpecialApplicationMetadata(bundleIdentifier)) {
         return YES;
     }
     return [self applicationForBundleIdentifier:bundleIdentifier] != nil;
-}
-
-- (nullable UIImage *)continuityIcon {
-    return [UIImage imageNamed:@"HandOff"
-                             inBundle:[KayokoPasteboardManager localizationBundle]
-        compatibleWithTraitCollection:nil];
-}
-
-- (nullable UIImage *)continuitySearchTokenIcon {
-    UIImage *icon = [UIImage imageNamed:@"HandOff-Search"
-                               inBundle:[KayokoPasteboardManager localizationBundle]
-          compatibleWithTraitCollection:nil];
-    return [icon imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
-}
-
-- (nullable UIImage *)springBoardIcon {
-    return [UIImage imageNamed:@"HomeScreen"
-                             inBundle:[KayokoPasteboardManager localizationBundle]
-        compatibleWithTraitCollection:nil];
-}
-
-- (nullable UIImage *)springBoardSearchTokenIcon {
-    UIImage *icon = [UIImage imageNamed:@"HomeScreen-Search"
-                               inBundle:[KayokoPasteboardManager localizationBundle]
-          compatibleWithTraitCollection:nil];
-    return [icon imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
-}
-
-- (nullable UIImage *)spotlightIcon {
-    return [UIImage imageNamed:@"Spotlight"
-                             inBundle:[KayokoPasteboardManager localizationBundle]
-        compatibleWithTraitCollection:nil];
-}
-
-- (nullable UIImage *)spotlightSearchTokenIcon {
-    UIImage *icon = [UIImage imageNamed:@"Spotlight-Search"
-                               inBundle:[KayokoPasteboardManager localizationBundle]
-          compatibleWithTraitCollection:nil];
-    return [icon imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
 }
 
 - (nullable UIImage *)applicationIconForBundleIdentifier:(NSString *)bundleIdentifier
@@ -154,16 +74,10 @@ NS_ASSUME_NONNULL_END
 }
 
 - (nullable UIImage *)iconForBundleIdentifier:(NSString *)bundleIdentifier {
-    if ([self isContinuityBundleIdentifier:bundleIdentifier]) {
-        return [self continuityIcon];
-    }
-
-    if ([self isSpotlightBundleIdentifier:bundleIdentifier]) {
-        return [self spotlightIcon];
-    }
-
-    if ([self isSpringBoardBundleIdentifier:bundleIdentifier]) {
-        return [self springBoardIcon];
+    NSDictionary *special = KayokoFilterSpecialApplicationMetadata(bundleIdentifier);
+    if (special) {
+        return [UIImage imageNamed:special[@"image"] inBundle:[KayokoPasteboardManager localizationBundle]
+            compatibleWithTraitCollection:nil];
     }
 
     return [self applicationIconForBundleIdentifier:bundleIdentifier
@@ -172,16 +86,11 @@ NS_ASSUME_NONNULL_END
 }
 
 - (nullable UIImage *)smallIconForBundleIdentifier:(NSString *)bundleIdentifier {
-    if ([self isContinuityBundleIdentifier:bundleIdentifier]) {
-        return [self continuitySearchTokenIcon];
-    }
-
-    if ([self isSpotlightBundleIdentifier:bundleIdentifier]) {
-        return [self spotlightSearchTokenIcon];
-    }
-
-    if ([self isSpringBoardBundleIdentifier:bundleIdentifier]) {
-        return [self springBoardSearchTokenIcon];
+    NSDictionary *special = KayokoFilterSpecialApplicationMetadata(bundleIdentifier);
+    if (special) {
+        UIImage *icon = [UIImage imageNamed:[special[@"image"] stringByAppendingString:@"-Search"]
+            inBundle:[KayokoPasteboardManager localizationBundle] compatibleWithTraitCollection:nil];
+        return [icon imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
     }
 
     return [self applicationIconForBundleIdentifier:bundleIdentifier

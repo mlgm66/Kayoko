@@ -13,7 +13,6 @@
 "Auto Promote" = "Auto Promote";
 "Automatically Paste" = "Automatically Paste";
 "Behaviors" = "Behaviors";
-"CUSTOM_TAGS" = "Custom Tags…";
 "Cancel" = "Cancel";
 "Choose how much text each clipboard item shows in the list. More lines make items easier to identify, but show fewer items at once." = "Choose how much text each clipboard item shows in the list. More lines make items easier to identify, but show fewer items at once.";
 "Choose when a tapped item moves to the top. “History Only” keeps Favorites in your chosen order while still surfacing recently used history items." = "Choose when a tapped item moves to the top. “History Only” keeps Favorites in your chosen order while still surfacing recently used history items.";
@@ -53,8 +52,8 @@
 "Please check the following: open Zebra → select the Sources tab → tap Havoc → make sure it is signed in" = "Please check the following: open Zebra → select the Sources tab → tap Havoc → make sure it is signed in";
 "Please check the following: open Zebra → select the Sources tab → tap Havoc → tap My Account in the top-right corner → make sure Kayoko is in your purchases" = "Please check the following: open Zebra → select the Sources tab → tap Havoc → tap My Account in the top-right corner → make sure Kayoko is in your purchases";
 "Prediction Bar" = "Prediction Bar";
-"Preview" = "Preview";
-"Preview Lines" = "Preview Lines";
+"Content Display" = "Content Display";
+"Display Lines" = "Display Lines";
 "Previous" = "Previous";
 "Purchase Kayoko on Havoc Marketplace to support ongoing OwnGoal Studio maintenance." = "Purchase Kayoko on Havoc Marketplace to support ongoing OwnGoal Studio maintenance.";
 "Respring" = "Respring";
@@ -64,7 +63,6 @@
 "Save Images" = "Save Images";
 "Save Text" = "Save Text";
 "Server returned an invalid response. Tap the screen to retry: %@" = "Server returned an invalid response. Tap the screen to retry: %@";
-"Sharing some tweaks and apps I use myself." = "Sharing some tweaks and apps I use myself.";
 "Show Kayoko" = "Show Kayoko";
 "Single Line" = "Single Line";
 "Swipe to Select Words" = "Swipe to Select Words";
@@ -87,5 +85,8 @@
 "View Priority" = "View Priority";
 "When enabled, long-press a text item in History or Favorites to enter word selection mode. Tap a word to select it, then drag across words to extend or reduce the selection." = "When enabled, long-press a text item in History or Favorites to enter word selection mode. Tap a word to select it, then drag across words to extend or reduce the selection.";
 "Wishing on a star…" = "Wishing on a star…";
-"mlgm Personal Repo" = "mlgm Personal Repo";
 "⌘⇧V External Keyboard" = "⌘⇧V External Keyboard";
+"TAG_MANAGEMENT" = "Tag Management";
+"About" = "About";
+"Developer" = "Developer";
+"X" = "X";

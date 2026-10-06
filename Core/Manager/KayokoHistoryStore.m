@@ -4,6 +4,7 @@
 //
 
 #import "KayokoHistoryStore.h"
+#import "KayokoFilterCatalog.h"
 #import "KayokoPasteboardItem.h"
 #import "KayokoSearchCriteria.h"
 
@@ -66,6 +67,21 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)removeRichTextIfUnreferenced:(NSString *)richTextName;
 - (NSInteger)richTextReferenceCountForName:(NSString *)richTextName error:(NSError **)error;
 - (BOOL)historyKey:(NSString *)historyKey containsContent:(NSString *)content error:(NSError **)error;
+- (nullable NSData *)normalizedPNGDataFromEditedFileURL:(NSURL *)URL
+                                               pixelSize:(CGSize *)pixelSize
+                                                   error:(NSError **)error;
+- (nullable NSString *)originalImageNameForImageName:(NSString *)imageName error:(NSError **)error;
+- (nullable NSString *)originalImageNameForItemDictionary:(NSDictionary<NSString *, id> *)dictionary
+                                             historyKey:(NSString *)historyKey
+                                                  error:(NSError **)error;
+- (nullable NSDictionary<NSString *, id> *)updateImageForItemDictionary:(NSDictionary<NSString *, id> *)dictionary
+                                                          historyKey:(NSString *)historyKey
+                                                           imageName:(NSString *)imageName
+                                                           pixelSize:(CGSize)pixelSize
+                                                           byteCount:(NSUInteger)byteCount
+                                                               error:(NSError **)error;
+- (BOOL)pruneUnreferencedImageEditOriginalsWithError:(NSError **)error;
+- (BOOL)isValidImageName:(NSString *)imageName;
 @end
 
 NS_ASSUME_NONNULL_END
@@ -73,12 +89,13 @@ NS_ASSUME_NONNULL_END
 @implementation KayokoHistoryStore {
     sqlite3 *_database;
     NSMutableSet<NSString *> *_pendingRichTextCleanupNames;
+    NSMutableSet<NSString *> *_pendingImageCleanupNames;
 }
 
 #pragma mark - Paths
 
 + (NSString *)defaultDatabasePath {
-    return jbroot(@"/var/mobile/Library/com.mlgm.kayoko/history-v4.sqlite");
+    return KayokoHistoryDatabasePath();
 }
 
 #pragma mark - Lifecycle
@@ -167,6 +184,9 @@ NS_ASSUME_NONNULL_END
         @"PRAGMA journal_mode=WAL", @"PRAGMA synchronous=NORMAL",
         @"CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",
         createHistoryItemsStatement, createSearchTokensStatement, createUniqueIndexStatement,
+        (@"CREATE TABLE IF NOT EXISTS image_edit_originals (image_name TEXT PRIMARY KEY NOT NULL, "
+          "original_image_name TEXT NOT NULL)"),
+        @"CREATE INDEX IF NOT EXISTS image_edit_originals_original ON image_edit_originals(original_image_name)",
         createOrderedIndexStatement, createSearchTokenLookupIndexStatement, createSearchTokenUniqueIndexStatement,
         createSearchTokenDeleteTriggerStatement
     ];
@@ -261,6 +281,7 @@ NS_ASSUME_NONNULL_END
         _database = NULL;
     }
     _pendingRichTextCleanupNames = nil;
+    _pendingImageCleanupNames = nil;
 }
 
 #pragma mark - Locking and Maintenance
@@ -606,6 +627,247 @@ forItemDictionary:(NSDictionary<NSString *, id> *)dictionary
     return NO;
 }
 
+#pragma mark - Image Replacement
+
+- (NSData *)normalizedPNGDataFromEditedFileURL:(NSURL *)URL pixelSize:(CGSize *)pixelSize error:(NSError **)error {
+    CGImageSourceRef source = URL.isFileURL ? CGImageSourceCreateWithURL((__bridge CFURLRef)URL, NULL) : NULL;
+    CFStringRef type = source ? CGImageSourceGetType(source) : NULL;
+    if (!type || (!CFEqual(type, CFSTR("public.png")) && !CFEqual(type, CFSTR("public.jpeg"))) ||
+        CGImageSourceGetCount(source) != 1) {
+        if (source) CFRelease(source);
+        [self populateError:error code:SQLITE_MISMATCH message:@"无法读取编辑后的图片（仅支持 PNG 或 JPEG）。"];
+        return nil;
+    }
+
+    NSDictionary *properties = CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(source, 0, NULL));
+    NSUInteger width = [properties[(NSString *)kCGImagePropertyPixelWidth] unsignedIntegerValue];
+    NSUInteger height = [properties[(NSString *)kCGImagePropertyPixelHeight] unsignedIntegerValue];
+    if (!width || !height) {
+        CFRelease(source);
+        [self populateError:error code:SQLITE_MISMATCH message:@"编辑后的图片尺寸无效。"];
+        return nil;
+    }
+    NSDictionary *options = @{
+        (NSString *)kCGImageSourceCreateThumbnailFromImageAlways : @YES,
+        (NSString *)kCGImageSourceCreateThumbnailWithTransform : @YES,
+        (NSString *)kCGImageSourceThumbnailMaxPixelSize : @(MAX(width, height)),
+        (NSString *)kCGImageSourceShouldCacheImmediately : @YES
+    };
+    CGImageRef image = CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)options);
+    CFRelease(source);
+    if (!image) {
+        [self populateError:error code:SQLITE_MISMATCH message:@"无法解码编辑后的图片。"];
+        return nil;
+    }
+
+    CGSize normalizedSize = CGSizeMake(CGImageGetWidth(image), CGImageGetHeight(image));
+    NSMutableData *data = [NSMutableData data];
+    CGImageDestinationRef destination =
+        CGImageDestinationCreateWithData((__bridge CFMutableDataRef)data, CFSTR("public.png"), 1, NULL);
+    BOOL encoded = NO;
+    if (destination) {
+        CGImageDestinationAddImage(destination, image, NULL);
+        encoded = CGImageDestinationFinalize(destination);
+        CFRelease(destination);
+    }
+    CGImageRelease(image);
+    if (!encoded || !data.length) {
+        [self populateError:error code:SQLITE_IOERR message:@"无法保存编辑后的图片。"];
+        return nil;
+    }
+    if (pixelSize) *pixelSize = normalizedSize;
+    return data;
+}
+
+- (BOOL)isValidImageName:(NSString *)imageName {
+    return imageName.length && [imageName isEqualToString:imageName.lastPathComponent] &&
+        ![imageName isEqualToString:@"."] && ![imageName isEqualToString:@".."];
+}
+
+- (NSString *)originalImageNameForImageName:(NSString *)imageName error:(NSError **)error {
+    sqlite3_stmt *statement = NULL;
+    const char *sql = "SELECT original_image_name FROM image_edit_originals WHERE image_name = ?";
+    if (![self prepareStatement:sql statement:&statement error:error]) return nil;
+    [self bindObjects:@[ imageName ] toStatement:statement];
+    int result = sqlite3_step(statement);
+    NSString *originalImageName = result == SQLITE_ROW ? [self stringFromColumn:statement index:0] : nil;
+    if (result != SQLITE_ROW && result != SQLITE_DONE) {
+        [self populateError:error code:result message:[NSString stringWithUTF8String:sql]];
+    }
+    sqlite3_finalize(statement);
+    return originalImageName;
+}
+
+- (NSString *)originalImageNameForItemDictionary:(NSDictionary<NSString *, id> *)dictionary
+                                     historyKey:(NSString *)historyKey
+                                          error:(NSError **)error {
+    NSString *content = [self stringValueFromDictionary:dictionary key:kKayokoItemKeyContent fallback:nil];
+    NSString *imageName = [self stringValueFromDictionary:dictionary key:kKayokoItemKeyImageName fallback:nil];
+    if (!historyKey.length || !content.length || ![self isValidImageName:imageName]) return nil;
+    sqlite3_stmt *statement = NULL;
+    const char *sql = "SELECT original_image_name FROM image_edit_originals e JOIN history_items h "
+                      "ON h.image_name = e.image_name WHERE h.history_key = ? AND h.content = ? AND h.image_name = ?";
+    if (![self prepareStatement:sql statement:&statement error:error]) return nil;
+    [self bindObjects:@[ historyKey, content, imageName ] toStatement:statement];
+    int result = sqlite3_step(statement);
+    NSString *originalImageName = result == SQLITE_ROW ? [self stringFromColumn:statement index:0] : nil;
+    if (result != SQLITE_ROW && result != SQLITE_DONE) {
+        [self populateError:error code:result message:[NSString stringWithUTF8String:sql]];
+    }
+    sqlite3_finalize(statement);
+    return originalImageName;
+}
+
+- (NSDictionary<NSString *, id> *)updateImageForItemDictionary:(NSDictionary<NSString *, id> *)dictionary
+                                                  historyKey:(NSString *)historyKey
+                                                   imageName:(NSString *)imageName
+                                                   pixelSize:(CGSize)pixelSize
+                                                   byteCount:(NSUInteger)byteCount
+                                                       error:(NSError **)error {
+    NSString *content = [self stringValueFromDictionary:dictionary key:kKayokoItemKeyContent fallback:nil];
+    NSString *oldImageName = [self stringValueFromDictionary:dictionary key:kKayokoItemKeyImageName fallback:nil];
+    if (!historyKey.length || !content.length || ![self isValidImageName:oldImageName]) {
+        [self populateError:error code:SQLITE_MISUSE message:@"无效的图片历史记录。"];
+        return nil;
+    }
+    NSInteger changedCount = 0;
+    BOOL success = [self executeStatement:@"UPDATE history_items SET content = ?, image_name = ?, "
+                                           "image_width = ?, image_height = ?, image_byte_count = ?, updated_at = ? "
+                                           "WHERE history_key = ? AND content = ? AND image_name = ?"
+                                 bindings:@[ imageName, imageName, @((NSUInteger)pixelSize.width), @((NSUInteger)pixelSize.height),
+                                             @(byteCount), @([NSDate.date timeIntervalSince1970]),
+                                             historyKey, content, oldImageName ]
+                                  changes:&changedCount
+                                    error:error];
+    if (!success) return nil;
+    if (changedCount != 1) {
+        [self populateError:error code:changedCount == 0 ? SQLITE_NOTFOUND : SQLITE_CONSTRAINT
+                    message:KayokoHistoryStoreLocalizedString(@"History item not found")];
+        return nil;
+    }
+    sqlite3_stmt *statement = NULL;
+    const char *sql = "SELECT bundle_identifier, content, image_name, has_link, tag_uuid, note, created_at, "
+                      "image_width, image_height, rich_text_uti, rich_text_name, image_byte_count "
+                      "FROM history_items WHERE history_key = ? AND content = ? AND image_name = ?";
+    if (![self prepareStatement:sql statement:&statement error:error]) return nil;
+    [self bindObjects:@[ historyKey, imageName, imageName ] toStatement:statement];
+    int result = sqlite3_step(statement);
+    NSDictionary *updatedDictionary = result == SQLITE_ROW ? [self dictionaryFromCurrentRowInStatement:statement] : nil;
+    if (!updatedDictionary) {
+        [self populateError:error code:result == SQLITE_DONE ? SQLITE_NOTFOUND : result
+                    message:KayokoHistoryStoreLocalizedString(@"History item not found")];
+    }
+    sqlite3_finalize(statement);
+    return updatedDictionary;
+}
+
+- (NSDictionary<NSString *, id> *)replaceImageForItemDictionary:(NSDictionary<NSString *, id> *)dictionary
+                                                  inHistoryKey:(NSString *)historyKey
+                                                 editedFileURL:(NSURL *)URL
+                                                         error:(NSError **)error {
+    NSString *content = [self stringValueFromDictionary:dictionary key:kKayokoItemKeyContent fallback:nil];
+    NSString *oldImageName = [self stringValueFromDictionary:dictionary key:kKayokoItemKeyImageName fallback:nil];
+    if (!historyKey.length || !content.length || ![self isValidImageName:oldImageName]) {
+        [self populateError:error code:SQLITE_MISUSE message:@"无效的图片历史记录。"];
+        return nil;
+    }
+    CGSize pixelSize = CGSizeZero;
+    NSData *data = [self normalizedPNGDataFromEditedFileURL:URL pixelSize:&pixelSize error:error];
+    if (!data) return nil;
+    NSString *imageName = [NSUUID.UUID.UUIDString stringByAppendingPathExtension:@"png"];
+    NSString *imagePath = [self.imagesPath stringByAppendingPathComponent:imageName];
+    NSFileManager *fileManager = NSFileManager.defaultManager;
+    if (![data writeToFile:imagePath options:NSDataWritingAtomic error:error] ||
+        ![self beginTransactionWithError:error]) {
+        [fileManager removeItemAtPath:imagePath error:nil];
+        return nil;
+    }
+    NSDictionary *updatedDictionary = [self updateImageForItemDictionary:dictionary historyKey:historyKey
+                                                              imageName:imageName pixelSize:pixelSize
+                                                              byteCount:data.length error:error];
+    BOOL success = updatedDictionary != nil;
+    if (success) {
+        NSError *originalError = nil;
+        NSString *originalImageName = [self originalImageNameForImageName:oldImageName error:&originalError] ?: oldImageName;
+        NSString *originalPath = [self.imagesPath stringByAppendingPathComponent:originalImageName];
+        if (originalError || ![self isValidImageName:originalImageName] ||
+            ![fileManager isReadableFileAtPath:originalPath] || [self imagePixelSizeForImageName:originalImageName].width <= 0) {
+            if (originalError && error) *error = originalError;
+            else [self populateError:error code:SQLITE_IOERR message:@"无法保留原图，请确认原图文件仍然存在。"];
+            success = NO;
+        } else {
+            success = [self executeStatement:@"INSERT INTO image_edit_originals (image_name, original_image_name) VALUES (?, ?)"
+                                    bindings:@[ imageName, originalImageName ] error:error];
+        }
+    }
+    if (success) success = [self removeImageIfUnreferenced:oldImageName error:error];
+    if (!success) {
+        [self rollbackTransaction];
+        [fileManager removeItemAtPath:imagePath error:nil];
+        return nil;
+    }
+    if (![self commitTransactionWithError:error]) {
+        [fileManager removeItemAtPath:imagePath error:nil];
+        return nil;
+    }
+    return updatedDictionary;
+}
+
+- (BOOL)canRestoreImageForItemDictionary:(NSDictionary<NSString *, id> *)dictionary
+                           inHistoryKey:(NSString *)historyKey
+                                  error:(NSError **)error {
+    NSString *originalImageName = [self originalImageNameForItemDictionary:dictionary historyKey:historyKey error:error];
+    if (![self isValidImageName:originalImageName]) return NO;
+    NSString *path = [self.imagesPath stringByAppendingPathComponent:originalImageName];
+    return [NSFileManager.defaultManager isReadableFileAtPath:path] &&
+        [self imagePixelSizeForImageName:originalImageName].width > 0;
+}
+
+- (NSDictionary<NSString *, id> *)restoreOriginalImageForItemDictionary:(NSDictionary<NSString *, id> *)dictionary
+                                                          inHistoryKey:(NSString *)historyKey
+                                                                 error:(NSError **)error {
+    if (![self beginTransactionWithError:error]) return nil;
+    NSError *originalError = nil;
+    NSString *originalImageName = [self originalImageNameForItemDictionary:dictionary historyKey:historyKey error:&originalError];
+    if (originalError || ![self isValidImageName:originalImageName]) {
+        if (originalError && error) *error = originalError;
+        else [self populateError:error code:SQLITE_NOTFOUND message:@"没有可复原的原图。"];
+        [self rollbackTransaction];
+        return nil;
+    }
+    NSString *originalPath = [self.imagesPath stringByAppendingPathComponent:originalImageName];
+    NSData *data = [NSData dataWithContentsOfFile:originalPath options:0 error:error];
+    CGSize pixelSize = [self imagePixelSizeForImageName:originalImageName];
+    if (!data.length || pixelSize.width <= 0 || pixelSize.height <= 0) {
+        if (!error || !*error) [self populateError:error code:SQLITE_IOERR message:@"无法读取原图。"];
+        [self rollbackTransaction];
+        return nil;
+    }
+    NSString *imageName = NSUUID.UUID.UUIDString;
+    if (originalImageName.pathExtension.length) imageName = [imageName stringByAppendingPathExtension:originalImageName.pathExtension];
+    NSString *imagePath = [self.imagesPath stringByAppendingPathComponent:imageName];
+    NSFileManager *fileManager = NSFileManager.defaultManager;
+    if (![data writeToFile:imagePath options:NSDataWritingAtomic error:error]) {
+        [self rollbackTransaction];
+        [fileManager removeItemAtPath:imagePath error:nil];
+        return nil;
+    }
+    NSDictionary *updatedDictionary = [self updateImageForItemDictionary:dictionary historyKey:historyKey
+                                                              imageName:imageName pixelSize:pixelSize
+                                                              byteCount:data.length error:error];
+    NSString *oldImageName = dictionary[kKayokoItemKeyImageName];
+    if (!updatedDictionary || ![self removeImageIfUnreferenced:oldImageName error:error]) {
+        [self rollbackTransaction];
+        [fileManager removeItemAtPath:imagePath error:nil];
+        return nil;
+    }
+    if (![self commitTransactionWithError:error]) {
+        [fileManager removeItemAtPath:imagePath error:nil];
+        return nil;
+    }
+    return updatedDictionary;
+}
+
 #pragma mark - Bulk Removal
 
 - (BOOL)removeItemsFromHistoryKey:(NSString *)historyKey
@@ -795,27 +1057,10 @@ forItemDictionary:(NSDictionary<NSString *, id> *)dictionary
 #pragma mark - Search Metadata
 
 - (NSArray<NSString *> *)availableSearchAppBundleIdentifiersWithError:(NSError **)error {
-    sqlite3_stmt *statement = NULL;
-    const char *sql = "SELECT DISTINCT bundle_identifier FROM history_items "
-                      "WHERE bundle_identifier <> '' ORDER BY bundle_identifier COLLATE NOCASE";
-    if (![self prepareStatement:sql statement:&statement error:error]) {
+    if (![self openDatabaseWithError:error]) {
         return @[];
     }
-
-    NSMutableArray<NSString *> *bundleIdentifiers = [[NSMutableArray alloc] init];
-    int stepResult = SQLITE_OK;
-    while ((stepResult = sqlite3_step(statement)) == SQLITE_ROW) {
-        NSString *bundleIdentifier = [self stringFromColumn:statement index:0];
-        if ([bundleIdentifier length] > 0) {
-            [bundleIdentifiers addObject:bundleIdentifier];
-        }
-    }
-    if (stepResult != SQLITE_DONE) {
-        [self populateError:error code:stepResult message:[NSString stringWithUTF8String:sql]];
-    }
-
-    sqlite3_finalize(statement);
-    return bundleIdentifiers;
+    return KayokoReadSearchAppBundleIdentifiers(_database, error) ?: @[];
 }
 
 #pragma mark - Import
@@ -1694,6 +1939,26 @@ forItemDictionary:(NSDictionary<NSString *, id> *)dictionary
 
 #pragma mark - Image Cleanup
 
+- (BOOL)pruneUnreferencedImageEditOriginalsWithError:(NSError **)error {
+    sqlite3_stmt *statement = NULL;
+    const char *sql = "SELECT original_image_name FROM image_edit_originals e "
+                      "WHERE NOT EXISTS (SELECT 1 FROM history_items h WHERE h.image_name = e.image_name)";
+    if (![self prepareStatement:sql statement:&statement error:error]) return NO;
+    int result = SQLITE_OK;
+    while ((result = sqlite3_step(statement)) == SQLITE_ROW) {
+        NSString *originalImageName = [self stringFromColumn:statement index:0];
+        if (originalImageName.length) [_pendingImageCleanupNames addObject:originalImageName];
+    }
+    sqlite3_finalize(statement);
+    if (result != SQLITE_DONE) {
+        [self populateError:error code:result message:[NSString stringWithUTF8String:sql]];
+        return NO;
+    }
+    return [self executeStatement:@"DELETE FROM image_edit_originals WHERE NOT EXISTS "
+                                    "(SELECT 1 FROM history_items h WHERE h.image_name = image_edit_originals.image_name)"
+                            error:error];
+}
+
 - (NSArray<NSString *> *)imageNamesForHistoryKey:(NSString *)historyKey error:(NSError **)error {
     sqlite3_stmt *statement = NULL;
     const char *sql = "SELECT DISTINCT image_name FROM history_items WHERE history_key = ? AND image_name <> ''";
@@ -1714,6 +1979,11 @@ forItemDictionary:(NSDictionary<NSString *, id> *)dictionary
 }
 
 - (BOOL)removeImageIfUnreferenced:(NSString *)imageName error:(NSError **)error {
+    if (![self isValidImageName:imageName]) return YES;
+    if (_pendingImageCleanupNames) {
+        [_pendingImageCleanupNames addObject:imageName];
+        return YES;
+    }
     NSInteger referenceCount = [self imageReferenceCountForImageName:imageName error:error];
     if ([imageName length] == 0 || referenceCount < 0 || referenceCount > 0) {
         return YES;
@@ -1726,16 +1996,22 @@ forItemDictionary:(NSDictionary<NSString *, id> *)dictionary
 
 - (NSInteger)imageReferenceCountForImageName:(NSString *)imageName error:(NSError **)error {
     sqlite3_stmt *statement = NULL;
-    if (![self prepareStatement:"SELECT COUNT(*) FROM history_items WHERE image_name = ?"
+    const char *sql = "SELECT (SELECT COUNT(*) FROM history_items WHERE image_name = ?) + "
+                      "(SELECT COUNT(*) FROM image_edit_originals WHERE original_image_name = ?)";
+    if (![self prepareStatement:sql
                       statement:&statement
                           error:error]) {
         return -1;
     }
 
     sqlite3_bind_text(statement, 1, [imageName UTF8String], -1, SQLITE_TRANSIENT);
-    NSInteger count = 0;
-    if (sqlite3_step(statement) == SQLITE_ROW) {
+    sqlite3_bind_text(statement, 2, [imageName UTF8String], -1, SQLITE_TRANSIENT);
+    NSInteger count = -1;
+    int result = sqlite3_step(statement);
+    if (result == SQLITE_ROW) {
         count = (NSUInteger)sqlite3_column_int64(statement, 0);
+    } else {
+        [self populateError:error code:result message:[NSString stringWithUTF8String:sql]];
     }
     sqlite3_finalize(statement);
     return count;
@@ -1957,11 +2233,16 @@ forItemDictionary:(NSDictionary<NSString *, id> *)dictionary
     BOOL success = [self executeStatement:@"BEGIN IMMEDIATE TRANSACTION" error:error];
     if (success) {
         _pendingRichTextCleanupNames = [[NSMutableSet alloc] init];
+        _pendingImageCleanupNames = [[NSMutableSet alloc] init];
     }
     return success;
 }
 
 - (BOOL)commitTransactionWithError:(NSError **)error {
+    if (_pendingImageCleanupNames && ![self pruneUnreferencedImageEditOriginalsWithError:error]) {
+        [self rollbackTransaction];
+        return NO;
+    }
     if (![self executeStatement:@"COMMIT" error:error]) {
         NSError *commitError = error ? *error : nil;
         [self rollbackTransaction];
@@ -1972,7 +2253,12 @@ forItemDictionary:(NSDictionary<NSString *, id> *)dictionary
     }
 
     NSSet<NSString *> *richTextCleanupNames = [_pendingRichTextCleanupNames copy];
+    NSSet<NSString *> *imageCleanupNames = [_pendingImageCleanupNames copy];
     _pendingRichTextCleanupNames = nil;
+    _pendingImageCleanupNames = nil;
+    for (NSString *imageName in imageCleanupNames) {
+        [self removeImageIfUnreferenced:imageName error:nil];
+    }
     for (NSString *richTextName in richTextCleanupNames) {
         [self removeRichTextIfUnreferenced:richTextName];
     }
@@ -1982,6 +2268,7 @@ forItemDictionary:(NSDictionary<NSString *, id> *)dictionary
 - (void)rollbackTransaction {
     [self executeStatement:@"ROLLBACK" error:nil];
     _pendingRichTextCleanupNames = nil;
+    _pendingImageCleanupNames = nil;
 }
 
 #pragma mark - SQLite Execution

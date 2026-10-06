@@ -7,6 +7,7 @@
 
 #import "KayokoApplicationMetadataProvider.h"
 #import "KayokoHistoryListView.h"
+#import "KayokoFilterOrderStore.h"
 #import "KayokoHistoryListViewController.h"
 #import "KayokoPasteboardManager.h"
 #import "KayokoPreferenceKeys.h"
@@ -36,6 +37,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 #pragma mark - Tokens
 
+@property(nonatomic, strong) KayokoFilterOrderStore *filterOrderStore;
 @property(nonatomic, copy) NSArray<KayokoSearchToken *> *tagTokens;
 @property(nonatomic, copy) NSArray<KayokoSearchToken *> *appTokens;
 @property(nonatomic, strong) KayokoApplicationMetadataProvider *metadataProvider;
@@ -73,12 +75,15 @@ NS_ASSUME_NONNULL_END
                  panGestureRecognizer:(UIPanGestureRecognizer *)panGestureRecognizer {
     self = [super init];
     if (self) {
+        _filterOrderStore = [[KayokoFilterOrderStore alloc] init];
         _historyListViewController = historyListViewController;
         _favoritesListViewController = favoritesListViewController;
         _historySearchBar = [self newSearchBar];
         _favoritesSearchBar = [self newSearchBar];
         _historyTokenListViewController = [[KayokoSearchTokenListViewController alloc] init];
         _favoritesTokenListViewController = [[KayokoSearchTokenListViewController alloc] init];
+        [_historyTokenListViewController applyFilterOrder:_filterOrderStore];
+        [_favoritesTokenListViewController applyFilterOrder:_filterOrderStore];
         [_historyTokenListViewController setDelegate:self];
         [_favoritesTokenListViewController setDelegate:self];
         [_favoritesTokenListViewController setKeepsSelectedSectionsVisible:YES];
@@ -240,43 +245,20 @@ NS_ASSUME_NONNULL_END
     return [NSString stringWithFormat:@"installed=%@;title=%@", installed ? @"1" : @"0", title ?: @""];
 }
 
-- (KayokoSearchToken *)selectedCategoryTokenForCriteria:(KayokoSearchCriteria *)criteria
-                                    tokenListController:(KayokoSearchTokenListViewController *)tokenListController {
-    (void)tokenListController;
-    NSString *categoryValue = [criteria categoryValue];
-    if ([categoryValue length] == 0) {
+- (KayokoSearchToken *)selectedCategoryTokenForCriteria:(KayokoSearchCriteria *)criteria {
+    NSString *identifier = [criteria categoryValue];
+    if (![identifier length]) {
         return nil;
     }
-
+    NSDictionary *metadata = KayokoFilterCategoryMetadata(identifier);
+    if (!metadata) {
+        return nil;
+    }
     NSBundle *bundle = [KayokoPasteboardManager localizationBundle];
-    NSDictionary<NSString *, NSDictionary<NSString *, NSString *> *> *metadata = @{
-        kKayokoSearchCategoryText :
-            @{@"title" : [bundle localizedStringForKey:@"Text" value:nil table:@"Tweak"], @"image" : @"text.alignleft"},
-        kKayokoSearchCategoryLink :
-            @{@"title" : [bundle localizedStringForKey:@"Links" value:nil table:@"Tweak"], @"image" : @"link"},
-        kKayokoSearchCategoryPhone : @{
-            @"title" : [bundle localizedStringForKey:@"Phone Numbers" value:nil table:@"Tweak"],
-            @"image" : @"phone.fill"
-        },
-        kKayokoSearchCategoryDate :
-            @{@"title" : [bundle localizedStringForKey:@"Dates" value:nil table:@"Tweak"], @"image" : @"calendar"},
-        kKayokoSearchCategoryFlight :
-            @{@"title" : [bundle localizedStringForKey:@"Flights" value:nil table:@"Tweak"], @"image" : @"airplane"},
-        kKayokoSearchCategoryAddress : @{
-            @"title" : [bundle localizedStringForKey:@"Addresses" value:nil table:@"Tweak"],
-            @"image" : @"mappin.and.ellipse"
-        },
-        kKayokoSearchCategoryImage :
-            @{@"title" : [bundle localizedStringForKey:@"Images" value:nil table:@"Tweak"], @"image" : @"photo.fill"}
-    };
-    NSDictionary<NSString *, NSString *> *tokenMetadata = metadata[categoryValue];
-    if (!tokenMetadata) {
-        return nil;
-    }
     return [KayokoSearchToken tokenWithType:kKayokoSearchTokenTypeCategory
-                                      value:categoryValue
-                                      title:tokenMetadata[@"title"]
-                                  imageName:tokenMetadata[@"image"]];
+                                      value:identifier
+                                      title:[bundle localizedStringForKey:metadata[@"title"] value:nil table:@"Tweak"]
+                                  imageName:metadata[@"image"]];
 }
 
 - (KayokoSearchToken *)selectedAppTokenForCriteria:(KayokoSearchCriteria *)criteria {
@@ -317,7 +299,7 @@ NS_ASSUME_NONNULL_END
                                       tokenListController:(KayokoSearchTokenListViewController *)tokenListController {
     NSMutableArray<KayokoSearchToken *> *searchTokens = [[NSMutableArray alloc] init];
     NSArray<KayokoSearchToken *> *tokens = @[
-        [self selectedCategoryTokenForCriteria:criteria tokenListController:tokenListController] ?: (id)[NSNull null],
+        [self selectedCategoryTokenForCriteria:criteria] ?: (id)[NSNull null],
         [self selectedTagTokenForCriteria:criteria] ?: (id)[NSNull null],
         [self selectedAppTokenForCriteria:criteria] ?: (id)[NSNull null]
     ];
@@ -636,6 +618,23 @@ NS_ASSUME_NONNULL_END
 
 #pragma mark - Token Loading
 
+- (void)reloadFilterOrder {
+    [[self filterOrderStore] reload];
+    [[self historyTokenListViewController] applyFilterOrder:[self filterOrderStore]];
+    [[self favoritesTokenListViewController] applyFilterOrder:[self filterOrderStore]];
+    NSArray *identifiers = [[self appTokens] valueForKey:@"value"];
+    NSArray *appTokens = [self appTokensFromBundleIdentifiers:identifiers];
+    BOOL appsChanged = ![self tokenArray:[self appTokens] isDisplayEqualToTokenArray:appTokens];
+    BOOL tagsChanged = [self reloadTagTokens];
+    if (appsChanged) {
+        [self setAppTokens:appTokens];
+    }
+    if (appsChanged || tagsChanged) {
+        [self updateAllTokenLists];
+        [self syncSearchBarsAfterTokenSourceChange];
+    }
+}
+
 - (BOOL)reloadTagTokens {
     NSArray<KayokoTag *> *tags = [[KayokoTagCatalog sharedCatalog] reloadTagsForcingDiskRead:NO];
     NSMutableArray<KayokoSearchToken *> *tagTokens = [[NSMutableArray alloc] initWithCapacity:[tags count]];
@@ -674,7 +673,9 @@ NS_ASSUME_NONNULL_END
         }];
     NSMutableArray<KayokoSearchToken *> *appTokens =
         [[NSMutableArray alloc] initWithCapacity:[sortedBundleIdentifiers count]];
-    for (NSString *bundleIdentifier in sortedBundleIdentifiers) {
+    NSArray *orderedIdentifiers = [[self filterOrderStore] orderedIdentifiers:sortedBundleIdentifiers
+                                                                      forKey:kKayokoPreferenceKeyFilterApplicationOrder];
+    for (NSString *bundleIdentifier in orderedIdentifiers) {
         NSString *title = [[self metadataProvider] displayNameForBundleIdentifier:bundleIdentifier];
         [appTokens
             addObject:[KayokoSearchToken tokenWithType:kKayokoSearchTokenTypeApp

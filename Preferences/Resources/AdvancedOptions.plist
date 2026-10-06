@@ -96,7 +96,7 @@
 			<key>cell</key>
 			<string>PSSegmentCell</string>
 			<key>default</key>
-			<integer>0</integer>
+			<integer>2</integer>
 			<key>defaults</key>
 			<string>com.mlgm.kayoko.preferences</string>
 			<key>key</key>

@@ -288,7 +288,69 @@ forItemDictionary:(NSDictionary<NSString *, id> *)dictionary
     }];
 }
 
+- (void)replaceImageForItemDictionary:(NSDictionary<NSString *, id> *)dictionary
+                        inHistoryKey:(NSString *)historyKey
+                       editedFileURL:(NSURL *)URL
+                          completion:(void (^)(NSDictionary<NSString *, id> *updatedDictionary,
+                                               NSError *error))completion {
+    NSDictionary *snapshot = [dictionary copy];
+    NSString *key = [historyKey copy];
+    [self performAsync:^{
+      @autoreleasepool {
+          NSError *error = nil;
+          KayokoHistoryStore *historyStore = [self preparedHistoryStoreOnQueueWithError:&error];
+          NSDictionary *updatedDictionary = [historyStore replaceImageForItemDictionary:snapshot
+                                                                           inHistoryKey:key
+                                                                          editedFileURL:URL
+                                                                                  error:&error];
+          if (completion) {
+              dispatch_async(dispatch_get_main_queue(), ^{
+                completion(updatedDictionary, error);
+              });
+          }
+      }
+    }];
+}
+
 #pragma mark - Bulk Removal
+
+- (void)canRestoreImageForItemDictionary:(NSDictionary<NSString *, id> *)dictionary
+                           inHistoryKey:(NSString *)historyKey
+                             completion:(void (^)(BOOL canRestore, NSError *error))completion {
+    NSDictionary *snapshot = [dictionary copy];
+    NSString *key = [historyKey copy];
+    [self performAsync:^{
+      NSError *error = nil;
+      KayokoHistoryStore *historyStore = [self preparedHistoryStoreOnQueueWithError:&error];
+      BOOL canRestore = [historyStore canRestoreImageForItemDictionary:snapshot inHistoryKey:key error:&error];
+      if (completion) {
+          dispatch_async(dispatch_get_main_queue(), ^{
+            completion(canRestore, error);
+          });
+      }
+    }];
+}
+
+- (void)restoreOriginalImageForItemDictionary:(NSDictionary<NSString *, id> *)dictionary
+                                inHistoryKey:(NSString *)historyKey
+                                  completion:(void (^)(NSDictionary<NSString *, id> *updatedDictionary,
+                                                       NSError *error))completion {
+    NSDictionary *snapshot = [dictionary copy];
+    NSString *key = [historyKey copy];
+    [self performAsync:^{
+      @autoreleasepool {
+          NSError *error = nil;
+          KayokoHistoryStore *historyStore = [self preparedHistoryStoreOnQueueWithError:&error];
+          NSDictionary *updatedDictionary = [historyStore restoreOriginalImageForItemDictionary:snapshot
+                                                                                 inHistoryKey:key error:&error];
+          if (completion) {
+              dispatch_async(dispatch_get_main_queue(), ^{
+                completion(updatedDictionary, error);
+              });
+          }
+      }
+    }];
+}
 
 - (void)removeItemsFromHistoryKey:(NSString *)historyKey
                shouldRemoveImages:(BOOL)shouldRemoveImages
