@@ -1601,8 +1601,8 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				HEADER_SEARCH_PATHS = "$(inherited) $(KAYOKO_THEOS_INCLUDE)";
 				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 5.0;
-				CURRENT_PROJECT_VERSION = 5.0;
+				MARKETING_VERSION = 5.0.1;
+				CURRENT_PROJECT_VERSION = 5.0.1;
 				KAYOKO_ALTLIST_FRAMEWORK_DIR = "$(SRCROOT)/Preferences/Frameworks/_roothide";
 				KAYOKO_PACKAGE_SCHEME = roothide;
 				KAYOKO_ROOTHIDE_LIB_DIR = "$(THEOS)/vendor/lib/iphone/roothide";
@@ -1674,6 +1674,8 @@
 					"-lsqlite3",
 					"-framework",
 					CoreServices,
+					"-framework",
+					DataDetectorsUI,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mlgm.kayoko.core;
 				PRODUCT_NAME = KayokoCore;
@@ -1886,6 +1888,8 @@
 					"-lsqlite3",
 					"-framework",
 					CoreServices,
+					"-framework",
+					DataDetectorsUI,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mlgm.kayoko.core;
 				PRODUCT_NAME = KayokoCore;
@@ -1960,8 +1964,8 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				HEADER_SEARCH_PATHS = "$(inherited) $(KAYOKO_THEOS_INCLUDE)";
 				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 5.0;
-				CURRENT_PROJECT_VERSION = 5.0;
+				MARKETING_VERSION = 5.0.1;
+				CURRENT_PROJECT_VERSION = 5.0.1;
 				KAYOKO_ALTLIST_FRAMEWORK_DIR = "$(SRCROOT)/Preferences/Frameworks/_roothide";
 				KAYOKO_PACKAGE_SCHEME = roothide;
 				KAYOKO_ROOTHIDE_LIB_DIR = "$(THEOS)/vendor/lib/iphone/roothide";

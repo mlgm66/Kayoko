@@ -25,8 +25,8 @@ settings:
     GCC_C_LANGUAGE_STANDARD: gnu11
     GCC_NO_COMMON_BLOCKS: YES
     IPHONEOS_DEPLOYMENT_TARGET: "14.0"
-    MARKETING_VERSION: "5.0"
-    CURRENT_PROJECT_VERSION: "5.0"
+    MARKETING_VERSION: "5.0.1"
+    CURRENT_PROJECT_VERSION: "5.0.1"
     ONLY_ACTIVE_ARCH: NO
     PRODUCT_NAME: "$(TARGET_NAME)"
     SDKROOT: iphoneos
@@ -122,6 +122,8 @@ targets:
           - "-lsqlite3"
           - "-framework"
           - "CoreServices"
+          - "-framework"
+          - "DataDetectorsUI"
         PRODUCT_BUNDLE_IDENTIFIER: com.mlgm.kayoko.core
         PRODUCT_NAME: KayokoCore
         EXECUTABLE_EXTENSION: dylib
