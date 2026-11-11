@@ -7,6 +7,7 @@
 
 #import <CommonCrypto/CommonDigest.h>
 #import <ImageIO/ImageIO.h>
+#import <roothide.h>
 #import <sys/stat.h>
 
 static NSUInteger const kKayokoThumbnailMemoryCacheCountLimit = 80;
@@ -35,7 +36,7 @@ static NSUInteger const kKayokoThumbnailContainerPayloadLimit = 32 * 1024 * 1024
 }
 
 + (NSString *)defaultCacheDirectoryPath {
-    return kKayokoThumbnailDefaultCacheDirectoryPath;
+    return jbroot(kKayokoThumbnailDefaultCacheDirectoryPath);
 }
 
 - (instancetype)init {

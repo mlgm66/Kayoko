@@ -668,17 +668,8 @@ static NSString *const kKayokoCopyVaultDataDirectoryPath = @"/var/mobile/Documen
 }
 
 - (NSString *)kayokoUpdaterPath {
-    NSFileManager *fileManager = [NSFileManager defaultManager];
-    NSArray<NSString *> *candidatePaths = @[
-        jbroot(@"/usr/local/libexec/kayoko_updater"), @"/var/jb/usr/local/libexec/kayoko_updater",
-        @"/usr/local/libexec/kayoko_updater"
-    ];
-    for (NSString *path in candidatePaths) {
-        if ([fileManager isExecutableFileAtPath:path]) {
-            return path;
-        }
-    }
-    return nil;
+    NSString *path = jbroot(@"/usr/local/libexec/kayoko_updater");
+    return [[NSFileManager defaultManager] isExecutableFileAtPath:path] ? path : nil;
 }
 
 - (void)resetPreferences {

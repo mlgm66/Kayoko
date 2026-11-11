@@ -175,10 +175,11 @@ static NSInteger const kKayokoUpdaterHistoryStoreBusyTimeoutMilliseconds = 10000
                                          (__bridge CFStringRef)kKayokoNotificationKeyCoreResetThumbnailMemoryCache, nil,
                                          nil, YES);
     NSFileManager *fileManager = [NSFileManager defaultManager];
-    if (![fileManager fileExistsAtPath:kKayokoThumbnailCacheDirectoryPath]) {
+    NSString *cacheDirectoryPath = jbroot(kKayokoThumbnailCacheDirectoryPath);
+    if (![fileManager fileExistsAtPath:cacheDirectoryPath]) {
         return YES;
     }
-    return [fileManager removeItemAtPath:kKayokoThumbnailCacheDirectoryPath error:error];
+    return [fileManager removeItemAtPath:cacheDirectoryPath error:error];
 }
 
 #pragma mark - Legacy Cleanup

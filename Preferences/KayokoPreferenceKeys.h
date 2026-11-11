@@ -101,7 +101,7 @@ static KayokoGestureRecognizerMode const kKayokoPreferenceKeyGestureRecognizerMo
     kKayokoGestureRecognizerModeClassic;
 static BOOL const kKayokoPreferenceKeyAutomaticallyPasteDefaultValue = YES;
 static KayokoAutomaticPasteMode const kKayokoPreferenceKeyAutomaticPasteModeDefaultValue =
-    kKayokoAutomaticPasteModeAutomatic;
+    kKayokoAutomaticPasteModeClassic;
 static KayokoAutomaticPromotionMode const kKayokoPreferenceKeyAutomaticPromotionModeDefaultValue =
     kKayokoAutomaticPromotionModeHistoryOnly;
 static KayokoInitialViewMode const kKayokoPreferenceKeyInitialViewModeDefaultValue =

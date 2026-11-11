@@ -46,7 +46,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)handleActionButtonWithAutomaticallyPaste:(BOOL)automaticallyPaste;
 - (void)setEditButtonEnabled:(BOOL)enabled;
 - (void)resetWordSelectionState;
-- (BOOL)shouldSuppressExternalHideRequest;
 - (void)updateActionButtonState;
 - (void)scrollToTopAnimated:(BOOL)animated;
 

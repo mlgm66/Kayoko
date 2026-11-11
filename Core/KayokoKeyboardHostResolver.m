@@ -31,6 +31,7 @@ static NSString *const kKayokoSpringBoardProcessName = @"SpringBoard";
 @end
 
 @interface FBProcess : NSObject
+- (pid_t)pid;
 - (NSString *)bundleIdentifier;
 - (NSString *)name;
 @end
@@ -151,6 +152,11 @@ NS_ASSUME_NONNULL_END
 }
 
 #pragma mark - State
+
+- (pid_t)processIdentifier {
+    FBProcess *process = [self.scene respondsToSelector:@selector(clientProcess)] ? self.scene.clientProcess : nil;
+    return [process respondsToSelector:@selector(pid)] ? process.pid : 0;
+}
 
 - (BOOL)isHelperInjected {
     return self.helperInjectedFlag == 1;

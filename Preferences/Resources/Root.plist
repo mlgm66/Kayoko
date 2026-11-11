@@ -154,6 +154,11 @@
 			<key>label</key>
 			<string>TAG_MANAGEMENT</string>
 		</dict>
+        <dict>
+            <key>cell</key><string>PSLinkCell</string>
+            <key>detail</key><string>KayokoScriptsViewController</string>
+            <key>label</key><string>Scripts</string>
+        </dict>
 
 		<dict>
 			<key>cell</key>

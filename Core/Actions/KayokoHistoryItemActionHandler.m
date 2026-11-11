@@ -68,6 +68,10 @@
         return;
     }
 
+    [self openURL:URL completion:completion];
+}
+
+- (void)openURL:(NSURL *)URL completion:(void (^)(BOOL success))completion {
     [[UIApplication sharedApplication] openURL:URL
                                        options:@{}
                              completionHandler:^(BOOL success) {

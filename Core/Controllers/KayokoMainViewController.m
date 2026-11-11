@@ -25,6 +25,8 @@
 #import "KayokoTextEditorView.h"
 #import "KayokoTextEditorViewController.h"
 #import "KayokoSearchController.h"
+#import "KayokoScriptPanelController.h"
+#import "KayokoScripts.h"
 #import "KayokoTagChipBarView.h"
 #import "KayokoTableViewCell.h"
 #import "KayokoTagCatalog.h"
@@ -74,6 +76,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, strong) KayokoHistoryListViewController *favoritesListViewController;
 @property(nonatomic, strong) KayokoClearConfirmationViewController *clearConfirmationViewController;
 @property(nonatomic, strong) KayokoPreviewViewController *previewViewController;
+@property(nonatomic, strong) KayokoScriptPanelController *scriptController;
 @property(nonatomic, strong) KayokoTextEditorViewController *textEditorViewController;
 @property(nonatomic, strong) KayokoWordSelectionViewController *wordSelectionViewController;
 @property(nonatomic, strong) KayokoNoteEditorViewController *noteEditorViewController;
@@ -268,6 +271,23 @@ NS_ASSUME_NONNULL_END
                                                       action:@selector(handleTitleTapControlPressed)
                                             forControlEvents:UIControlEventTouchUpInside];
 
+        _scriptController = [KayokoScriptPanelController new];
+        _scriptController.panel = _mainView;
+        [self addChildViewController:_scriptController];
+        [_mainView installFullContentView:_scriptController.view headerView:_scriptController.headerView hidden:YES];
+        [_panelPresentationController registerHeaderView:_scriptController.headerView];
+        [_scriptController didMoveToParentViewController:self];
+        for (KayokoHeaderView *header in @[previewHeaderView, wordSelectionHeaderView]) {
+            [header.scriptButton addTarget:self action:@selector(showScriptList) forControlEvents:UIControlEventTouchUpInside];
+        }
+        _scriptController.didFinishTransition = ^{ [weakSelf executePendingExternalHideRequestIfReady]; };
+        _scriptController.returnToSource = ^(BOOL copied) { [weakSelf returnFromScriptsAfterCopy:copied]; };
+        _scriptController.dismissPanel = ^{
+            if (!weakSelf || weakSelf.isDismissingPanel || weakSelf.isHidden) return;
+            [weakSelf.panelPresentationController prepareStandardDismissAnimation];
+            [weakSelf hideAfterDirectPaste];
+        };
+
         _searchController =
             [[KayokoSearchController alloc] initWithContainerView:_mainView
                                                        headerView:[_mainView headerView]
@@ -440,7 +460,7 @@ NS_ASSUME_NONNULL_END
 
 - (void)executePendingExternalHideRequestIfReady {
     if ([[self externalHideCoordinator] shouldSuppressExternalHide] ||
-        [[self previewViewController] shouldSuppressExternalHideRequest] ||
+        [[self previewViewController] shouldSuppressExternalHideRequest] || self.scriptController.protectsSystemAction ||
         [self externalHideRequestShouldWaitForAnimations]) {
         return;
     }
@@ -511,6 +531,7 @@ NS_ASSUME_NONNULL_END
     if (![self isPreviewTextEditing]) {
         [[[self previewViewController] previewView] setKeyboardBottomInset:keyboardBottomInset];
     }
+    self.scriptController.keyboardBottomInset = keyboardBottomInset;
     [[[self wordSelectionViewController] wordSelectionView] setKeyboardBottomInset:keyboardBottomInset];
     [self updatePreviewTextEditingPanelForKeyboardBottomInset:keyboardBottomInset];
 }
@@ -1463,7 +1484,7 @@ NS_ASSUME_NONNULL_END
 
 - (void)requestClearClipboardImagesOnly:(BOOL)imagesOnly {
     if ([[self panelPresentationController] isAnimating] || ![[[self previewViewController] previewView] isHidden] ||
-        ![[[self wordSelectionViewController] view] isHidden] || [self isShowingClearConfirmation]) {
+        ![[[self wordSelectionViewController] view] isHidden] || !self.scriptController.view.hidden || [self isShowingClearConfirmation]) {
         return;
     }
     [self showClearConfirmationForHistoryKey:kKayokoHistoryKeyHistory imagesOnly:imagesOnly];
@@ -1737,7 +1758,7 @@ NS_ASSUME_NONNULL_END
 
 - (void)handleClearButtonPressed {
     if ([[self panelPresentationController] isAnimating] || ![[[self previewViewController] previewView] isHidden] ||
-        ![[[self wordSelectionViewController] view] isHidden] || [self isShowingClearConfirmation] ||
+        ![[[self wordSelectionViewController] view] isHidden] || !self.scriptController.view.hidden || [self isShowingClearConfirmation] ||
         NO) {
         return;
     }
@@ -2183,6 +2204,70 @@ NS_ASSUME_NONNULL_END
     [[self textEditorViewController] beginEditingItem:item
                                      sourceHistoryKey:historyKey
                                      replacementRange:replacementRange];
+}
+
+- (void)showScriptList {
+    if (self.mainView.isAnimating || self.panelPresentationController.isAnimating || self.isDismissingPanel ||
+        !self.scriptController.view.hidden) return;
+    BOOL words = !self.wordSelectionViewController.view.hidden;
+    KayokoPasteboardItem *item = words ? self.wordSelectionViewController.sourceItem : self.previewViewController.previewItem;
+    NSString *key = words ? self.wordSelectionViewController.sourceHistoryKey : self.previewViewController.sourceHistoryKey;
+    NSString *text = words && self.wordSelectionViewController.hasSelectedText ? self.wordSelectionViewController.selectedText : item.content;
+    if (!text.length || !key || (!words && self.previewViewController.view.hidden)) return;
+    [self.scriptController beginWithText:text item:item historyKey:key];
+    [self transitionScriptPanelForward:YES copied:NO];
+}
+
+- (void)returnFromScriptsAfterCopy:(BOOL)copied {
+    if (self.scriptController.view.hidden || self.mainView.isAnimating || self.isDismissingPanel) return;
+    [self transitionScriptPanelForward:NO copied:copied];
+}
+
+- (void)transitionScriptPanelForward:(BOOL)forward copied:(BOOL)copied {
+    BOOL words = self.wordSelectionViewController.sourceItem != nil;
+    KayokoPreviewView *preview = self.previewViewController.previewView;
+    KayokoWordSelectionView *selection = self.wordSelectionViewController.wordSelectionView;
+    UIView *source = words ? (UIView *)selection : preview;
+    UIView *sourceBody = words ? selection.transitionContentView : preview.transitionContentView;
+    KayokoHeaderView *sourceHeader = words ? selection.headerView : preview.headerView;
+    KayokoScriptPanelController *scripts = self.scriptController;
+    sourceHeader.hidden = forward;
+    scripts.headerView.hidden = !forward;
+    [self.mainView showContentView:forward ? scripts.view : source transitioningView:forward ? scripts.body : sourceBody
+        hideContentView:forward ? source : scripts.view transitioningView:forward ? sourceBody : scripts.body
+        direction:forward ? KayokoContentTransitionDirectionForward : KayokoContentTransitionDirectionBackward
+        alongsideAnimations:nil completion:^{
+            if (!forward) {
+                [scripts reset];
+                if (copied && !self.isDismissingPanel && !self.isHidden) {
+                    [self.panelPresentationController triggerHapticFeedbackWithStyle:UIImpactFeedbackStyleLight];
+                    [self showScriptCopyFeedbackInView:source];
+                }
+            }
+            [self executePendingExternalHideRequestIfReady];
+        }];
+}
+
+- (void)showScriptCopyFeedbackInView:(UIView *)view {
+    UILabel *label = [UILabel new];
+    label.text = KayokoScriptString(@"Copied");
+    label.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+    label.textColor = UIColor.labelColor;
+    label.backgroundColor = UIColor.secondarySystemBackgroundColor;
+    label.textAlignment = NSTextAlignmentCenter;
+    label.layer.cornerRadius = 12;
+    label.clipsToBounds = YES;
+    label.translatesAutoresizingMaskIntoConstraints = NO;
+    [view addSubview:label];
+    [NSLayoutConstraint activateConstraints:@[
+        [label.centerXAnchor constraintEqualToAnchor:view.centerXAnchor],
+        [label.bottomAnchor constraintEqualToAnchor:view.bottomAnchor constant:-16-[self.mainView safeAreaBottomInsetForContentView:view]],
+        [label.widthAnchor constraintGreaterThanOrEqualToConstant:label.intrinsicContentSize.width + 24],
+        [label.heightAnchor constraintGreaterThanOrEqualToConstant:28]
+    ]];
+    UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, label.text);
+    [UIView animateWithDuration:0.2 delay:1 options:UIViewAnimationOptionAllowUserInteraction
+        animations:^{ label.alpha = 0; } completion:^(BOOL finished) { [label removeFromSuperview]; }];
 }
 
 - (void)previewViewControllerDidRequestEdit:(KayokoPreviewViewController *)controller {
@@ -2771,7 +2856,7 @@ NS_ASSUME_NONNULL_END
                               }
                               if ([self isShowingClearConfirmation] ||
                                   ![[[self previewViewController] previewView] isHidden] ||
-                                  ![[[self wordSelectionViewController] view] isHidden] || [self isNoteEditing]) {
+                                  ![[[self wordSelectionViewController] view] isHidden] || !self.scriptController.view.hidden || [self isNoteEditing]) {
                                   return;
                               }
                               [self setHistoryContentVisibleForKey:historyKey];
@@ -2864,6 +2949,8 @@ NS_ASSUME_NONNULL_END
     [self restoreActiveSourceContentView];
     [[[self mainView] headerView] setHidden:NO];
     [[[self mainView] headerView] setAlpha:1.0];
+    [self.scriptController reset];
+    self.scriptController.view.hidden = YES;
     [[self previewViewController] resetPreviewState];
     [[self wordSelectionViewController] resetWordSelectionState];
     [[self textEditorViewController] reset];
@@ -2902,6 +2989,7 @@ NS_ASSUME_NONNULL_END
 
     [self clearExternalHideCoordinator];
     [self setDismissingPanel:YES];
+    [self.scriptController invalidatePendingActions];
     BOOL wasShowingTransientContent =
         [self isPreviewActive] || [self isWordSelectionActive] || [self isNoteEditing] || [self isPreviewTextEditing];
     [[self searchController] resignSearchFirstResponder];
@@ -2922,7 +3010,7 @@ NS_ASSUME_NONNULL_END
         return;
     }
 
-    if ([[self wordSelectionViewController] shouldSuppressExternalHideRequest] ||
+    if (self.scriptController.protectsSystemAction ||
         [[self previewViewController] shouldSuppressExternalHideRequest]) {
         return;
     }
@@ -2956,6 +3044,7 @@ NS_ASSUME_NONNULL_END
     [self dismissLeadingButtonMenu];
     [self clearExternalHideCoordinator];
     [self setDismissingPanel:YES];
+    [self.scriptController invalidatePendingActions];
     BOOL wasShowingTransientContent =
         [self isPreviewActive] || [self isWordSelectionActive] || [self isNoteEditing] || [self isPreviewTextEditing];
     [[self searchController] resignSearchFirstResponder];

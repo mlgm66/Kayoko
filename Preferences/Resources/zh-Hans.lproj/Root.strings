@@ -34,7 +34,7 @@
 "Input Switcher" = "输入法菜单";
 "Invalid Response" = "无效响应";
 "Item Details" = "条目详情";
-"Item details show when an item was last captured, along with its text length or image dimensions and file size." = "显示最近捕获时间，并附带文本字数，或图片尺寸和文件大小。";
+"Item details show when an item was last captured, along with its text length or image dimensions and file size." = "显示最近捕获的相对时间与具体时间，并附带文本字符数，或图片尺寸和文件大小。";
 "Kayoko" = "Kayoko";
 "Kayoko entered maintenance mode before the import failed. Restart SpringBoard now to continue using Kayoko." = "导入失败前 Kayoko 已进入维护模式。你需要立即重启 SpringBoard，才能继续使用 Kayoko。";
 "Made by OwnGoal Studio" = "「乌龙工作室」倾情献制";
@@ -90,3 +90,5 @@
 "About" = "关于";
 "Developer" = "开发者";
 "X" = "X";
+
+"Scripts" = "脚本";

@@ -1090,7 +1090,7 @@ forPasteboardItem:(KayokoPasteboardItem *)item
           [self _reallyWritePasteboardItem:pasteboardItem
                          sourceHistoryItem:sourceHistoryItem
                         fromHistoryWithKey:historyKey
-                           shouldAutoPaste:performsAutomaticPaste
+                        shouldAutoPaste:performsAutomaticPaste
                         automaticPasteMode:automaticPasteMode
                 requiresSearchFocusRestore:requiresSearchFocusRestore
                keyboardHostSceneIdentifier:keyboardHostSceneIdentifier];
@@ -1101,10 +1101,17 @@ forPasteboardItem:(KayokoPasteboardItem *)item
     [self _reallyWritePasteboardItem:pasteboardItem
                    sourceHistoryItem:sourceHistoryItem
                   fromHistoryWithKey:historyKey
-                     shouldAutoPaste:performsAutomaticPaste
+                        shouldAutoPaste:performsAutomaticPaste
                   automaticPasteMode:automaticPasteMode
           requiresSearchFocusRestore:requiresSearchFocusRestore
          keyboardHostSceneIdentifier:keyboardHostSceneIdentifier];
+}
+
+- (void)recordScriptResult:(KayokoPasteboardItem *)result source:(KayokoPasteboardItem *)source
+              inHistoryKey:(NSString *)historyKey pasted:(BOOL)pasted {
+    if (pasted && [self shouldPromoteSourceHistoryItemFromHistoryKey:historyKey])
+        [self movePasteboardItemToTop:source inHistoryWithKey:historyKey];
+    if ([self saveText]) [self movePasteboardItemToTop:result inHistoryWithKey:kKayokoHistoryKeyHistory];
 }
 
 - (BOOL)copyPasteboardItemToPasteboard:(KayokoPasteboardItem *)item {
@@ -1440,6 +1447,8 @@ forPasteboardItem:(KayokoPasteboardItem *)item
         return;
     }
 
+    NSDictionary *saved = [_historyRepository latestItemForHistoryKey:historyKey error:nil];
+    if ([saved[kKayokoItemKeyContent] isEqualToString:item.content]) dictionary = saved;
     [self postHistoryChangedNotificationForHistoryKey:historyKey
                                            changeType:kKayokoPasteboardManagerHistoryChangeTypeUpsertTop
                                        itemDictionary:dictionary

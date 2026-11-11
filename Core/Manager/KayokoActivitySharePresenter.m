@@ -9,7 +9,6 @@
 
 @property(nonatomic, strong, nullable) UIActivityViewController *presentedActivityController;
 
-- (BOOL)isPresentingActivity;
 
 @end
 

@@ -11,7 +11,7 @@
 #import "KayokoPasteboardItem.h"
 #import "KayokoPasteboardManager.h"
 #import "KayokoSearchCriteria.h"
-#import "KayokoSnapperIntegration.h"
+#import "KayokoClippaIntegration.h"
 #import "KayokoTableDataStore.h"
 #import "KayokoTableViewCell.h"
 #import "KayokoTableViewCellContent.h"
@@ -40,7 +40,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (KayokoTableViewCell *)newCellForItem:(KayokoPasteboardItem *)item addsPreviewGesture:(BOOL)addsPreviewGesture;
 - (void)loadThumbnailForItem:(KayokoPasteboardItem *)item intoCell:(KayokoTableViewCell *)cell;
 - (void)refreshVisibleItemDetails;
-- (nullable UIContextualAction *)snapperActionForItem:(KayokoPasteboardItem *)item;
+- (nullable UIContextualAction *)clippaActionForItem:(KayokoPasteboardItem *)item;
 @end
 
 NS_ASSUME_NONNULL_END
@@ -832,31 +832,39 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
     [deleteAction setBackgroundColor:[UIColor systemRedColor]];
     [actions addObject:deleteAction];
 
-    UIContextualAction *snapperAction = [self snapperActionForItem:item];
-    if (snapperAction) {
-        [actions addObject:snapperAction];
+    UIContextualAction *clippaAction = [self clippaActionForItem:item];
+    if (clippaAction) {
+        [actions addObject:clippaAction];
     }
     return [UISwipeActionsConfiguration configurationWithActions:actions];
 }
 
 #pragma mark - Swipe Actions
 
-- (nullable UIContextualAction *)snapperActionForItem:(KayokoPasteboardItem *)item {
+- (nullable UIContextualAction *)clippaActionForItem:(KayokoPasteboardItem *)item {
     NSString *text = [[item content] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if (!item || ([[item imageName] length] == 0 && [text length] == 0) || ![KayokoSnapperIntegration isAvailable]) {
+    if (!item || ([[item imageName] length] == 0 && [text length] == 0) || ![KayokoClippaIntegration isAvailable]) {
         return nil;
     }
 
-    UIContextualAction *snapperAction = [UIContextualAction
+    UIContextualAction *clippaAction = [UIContextualAction
         contextualActionWithStyle:UIContextualActionStyleNormal
                             title:@""
                           handler:^(__unused UIContextualAction *action, __unused __kindof UIView *sourceView,
                                     void (^completionHandler)(BOOL)) {
-                            completionHandler([KayokoSnapperIntegration floatPasteboardItem:item]);
+                            NSError *error = nil;
+                            BOOL success = [KayokoClippaIntegration floatPasteboardItem:item error:&error];
+                            completionHandler(success);
+                            if (!success && error && self.view.window && !self.presentedViewController) {
+                                NSBundle *bundle = [KayokoPasteboardManager localizationBundle];
+                                UIAlertController *alert = [UIAlertController alertControllerWithTitle:[bundle localizedStringForKey:@"Unable to Pin Image" value:nil table:@"Tweak"] message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
+                                [alert addAction:[UIAlertAction actionWithTitle:[bundle localizedStringForKey:@"OK" value:nil table:@"Tweak"] style:UIAlertActionStyleDefault handler:nil]];
+                                [self presentViewController:alert animated:YES completion:nil];
+                            }
                           }];
-    [snapperAction setImage:[UIImage systemImageNamed:@"pin.fill"]];
-    [snapperAction setBackgroundColor:[UIColor systemGreenColor]];
-    return snapperAction;
+    [clippaAction setImage:[UIImage systemImageNamed:@"pip.enter"]];
+    [clippaAction setBackgroundColor:[UIColor systemGreenColor]];
+    return clippaAction;
 }
 
 - (UIContextualAction *)moveActionForItem:(KayokoPasteboardItem *)item

@@ -61,6 +61,8 @@ static NSString *const kKayokoPasteboardManagerHistoryChangeTypeClear = @"clear"
           sourceHistoryItem:(KayokoPasteboardItem *)sourceHistoryItem
          fromHistoryWithKey:(NSString *)historyKey
        allowsAutomaticPaste:(BOOL)allowsAutomaticPaste;
+- (void)recordScriptResult:(KayokoPasteboardItem *)result source:(KayokoPasteboardItem *)source
+              inHistoryKey:(NSString *)historyKey pasted:(BOOL)pasted;
 - (BOOL)copyPasteboardItemToPasteboard:(KayokoPasteboardItem *)item;
 - (void)removePasteboardItem:(KayokoPasteboardItem *)item
           fromHistoryWithKey:(NSString *)historyKey

@@ -14,7 +14,6 @@ static CGFloat const kKayokoHistoryListViewAdditionalPreviewLineHeight = 18;
 static CGFloat const kKayokoHistoryListViewDetailLineHeight = 15;
 static NSUInteger const kKayokoHistoryListViewMaximumPreviewLineCount = 3;
 static CGFloat const kKayokoHistoryListViewHiddenHeaderInsetPadding = 1;
-static CGFloat const kKayokoHistoryListViewVerticalFadeHeight = 20;
 static CGFloat const kKayokoNoSearchResultsPlaceholderMinimumHeight = 96;
 static NSTimeInterval const kKayokoHistoryListViewTransientContentOffsetPreservationDuration = 1.0;
 
@@ -406,7 +405,7 @@ NS_ASSUME_NONNULL_END
             [self setVerticalScrollIndicatorInsets:UIEdgeInsetsMake(4, 0, 8, 2)];
         }
         [self setEdgeFadeAxis:KayokoEdgeFadeAxisVertical];
-        [self setEdgeFadeWidth:kKayokoHistoryListViewVerticalFadeHeight];
+        [self setEdgeFadeWidth:kKayokoListEdgeFadeHeight];
         [self setEdgeFadeEnabled:YES];
         _itemDetailsMode = kKayokoItemDetailsModeImagesOnly;
         [self setPreviewLineCount:1];

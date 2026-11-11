@@ -25,8 +25,8 @@ settings:
     GCC_C_LANGUAGE_STANDARD: gnu11
     GCC_NO_COMMON_BLOCKS: YES
     IPHONEOS_DEPLOYMENT_TARGET: "14.0"
-    MARKETING_VERSION: "5.0.1"
-    CURRENT_PROJECT_VERSION: "5.0.1"
+    MARKETING_VERSION: "5.1.2"
+    CURRENT_PROJECT_VERSION: "5.1.2"
     ONLY_ACTIVE_ARCH: NO
     PRODUCT_NAME: "$(TARGET_NAME)"
     SDKROOT: iphoneos
@@ -81,6 +81,7 @@ targets:
     sources:
       - path: Core
         excludes:
+          - ".theos"
           - "Makefile"
           - "**/*.plist"
       - path: Helper/KayokoSwipeUpGestureRecognizer.m
@@ -88,9 +89,11 @@ targets:
         buildPhase: headers
         headerVisibility: project
       - path: Shared/Tags
+      - path: Shared/Scripts
     settings:
       base:
         DEFINES_MODULE: NO
+        INFOPLIST_FILE: ""
         DYLIB_COMPATIBILITY_VERSION: "1"
         DYLIB_CURRENT_VERSION: "1"
         CODE_SIGNING_ALLOWED: NO
@@ -111,6 +114,7 @@ targets:
           - "$(SRCROOT)/Core/Views"
           - "$(SRCROOT)/Helper"
           - "$(SRCROOT)/Shared/Tags"
+          - "$(SRCROOT)/Shared/Scripts"
           - "$(SRCROOT)/Preferences"
         INSTALL_PATH: /Library/MobileSubstrate/DynamicLibraries
         LD_DYLIB_INSTALL_NAME: "@loader_path/.jbroot/Library/MobileSubstrate/DynamicLibraries/KayokoCore.dylib"
@@ -122,8 +126,6 @@ targets:
           - "-lsqlite3"
           - "-framework"
           - "CoreServices"
-          - "-framework"
-          - "DataDetectorsUI"
         PRODUCT_BUNDLE_IDENTIFIER: com.mlgm.kayoko.core
         PRODUCT_NAME: KayokoCore
         EXECUTABLE_EXTENSION: dylib
@@ -155,6 +157,7 @@ targets:
     sources:
       - path: Helper
         excludes:
+          - ".theos"
           - "Makefile"
           - "**/*.plist"
     settings:
@@ -205,11 +208,13 @@ targets:
     sources:
       - path: Preferences
         excludes:
+          - ".theos"
           - "Makefile"
           - "Frameworks/**"
           - "Resources/**"
           - "layout/**"
       - path: Shared/Tags
+      - path: Shared/Scripts
       - path: Preferences/Resources
         buildPhase: resources
         excludes:
@@ -228,6 +233,7 @@ targets:
           - "$(SRCROOT)/Preferences/Cells"
           - "$(SRCROOT)/Preferences/Utilities"
           - "$(SRCROOT)/Shared/Tags"
+          - "$(SRCROOT)/Shared/Scripts"
         INFOPLIST_FILE: Preferences/Resources/Info.plist
         INSTALL_PATH: /Library/PreferenceBundles
         LD_DYLIB_INSTALL_NAME: "@loader_path/.jbroot/Library/PreferenceBundles/KayokoPreferences.bundle/KayokoPreferences"
@@ -259,6 +265,7 @@ targets:
     sources:
       - path: Updater
         excludes:
+          - ".theos"
           - "Makefile"
           - "platformize.entitlements"
       - path: Core/Manager/KayokoHistoryStore.m
@@ -313,3 +320,18 @@ targets:
       - sdk: Security.framework
       - sdk: UIKit.framework
       - sdk: Foundation.framework
+
+  kayoko_script:
+    type: tool
+    platform: iOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: ScriptRunner/main.m
+    settings:
+      base:
+        PRODUCT_NAME: kayoko_script
+        INSTALL_PATH: /usr/local/libexec
+        SKIP_INSTALL: YES
+    dependencies:
+      - sdk: Foundation.framework
+      - sdk: JavaScriptCore.framework

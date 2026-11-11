@@ -16,6 +16,7 @@ NS_ASSUME_NONNULL_BEGIN
           completion:(nullable void (^)(BOOL success))completion;
 - (void)copyItem:(KayokoPasteboardItem *)item completion:(nullable void (^)(BOOL success))completion;
 - (void)saveImageForItem:(KayokoPasteboardItem *)item completion:(nullable void (^)(BOOL success))completion;
+- (void)openURL:(NSURL *)URL completion:(nullable void (^)(BOOL success))completion;
 - (void)openLinkForItem:(KayokoPasteboardItem *)item completion:(nullable void (^)(BOOL success))completion;
 - (void)deleteItem:(KayokoPasteboardItem *)item
         historyKey:(NSString *)historyKey

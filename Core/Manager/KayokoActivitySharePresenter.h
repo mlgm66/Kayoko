@@ -12,6 +12,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)presentActivityItems:(NSArray *)items
               fromController:(UIViewController *)controller
                   anchorView:(nullable UIView *)anchorView;
+- (BOOL)isPresentingActivity;
 - (void)dismissActivityAnimated:(BOOL)animated;
 
 @end

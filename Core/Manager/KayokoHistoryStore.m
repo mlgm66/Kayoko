@@ -402,14 +402,14 @@ NS_ASSUME_NONNULL_END
              toHistoryKey:(NSString *)historyKey
                     limit:(NSUInteger)limit
                     error:(NSError **)error {
-    return [self upsertItemDictionary:dictionary inHistoryKey:historyKey limit:limit error:error];
+    return [self upsertItemDictionary:dictionary inHistoryKey:historyKey limit:limit preserveExisting:NO error:error];
 }
 
 - (BOOL)moveItemDictionaryToTop:(NSDictionary<NSString *, id> *)dictionary
                    inHistoryKey:(NSString *)historyKey
                           limit:(NSUInteger)limit
                           error:(NSError **)error {
-    return [self upsertItemDictionary:dictionary inHistoryKey:historyKey limit:limit error:error];
+    return [self upsertItemDictionary:dictionary inHistoryKey:historyKey limit:limit preserveExisting:YES error:error];
 }
 
 - (BOOL)moveItemDictionary:(NSDictionary<NSString *, id> *)dictionary
@@ -423,10 +423,7 @@ NS_ASSUME_NONNULL_END
     }
 
     if ([sourceHistoryKey isEqualToString:destinationHistoryKey]) {
-        return [self upsertItemDictionary:dictionary
-                             inHistoryKey:destinationHistoryKey
-                                    limit:destinationLimit
-                                    error:error];
+        return [self moveItemDictionaryToTop:dictionary inHistoryKey:destinationHistoryKey limit:destinationLimit error:error];
     }
 
     if (![self beginTransactionWithError:error]) {
@@ -1676,12 +1673,22 @@ forItemDictionary:(NSDictionary<NSString *, id> *)dictionary
 - (BOOL)upsertItemDictionary:(NSDictionary<NSString *, id> *)dictionary
                 inHistoryKey:(NSString *)historyKey
                        limit:(NSUInteger)limit
+            preserveExisting:(BOOL)preserveExisting
                        error:(NSError **)error {
+    if (![dictionary[kKayokoItemKeyContent] length] || !historyKey.length) return YES;
     if (![self beginTransactionWithError:error]) {
         return NO;
     }
 
-    BOOL success = [self upsertItemDictionaryWithoutTransaction:dictionary inHistoryKey:historyKey error:error];
+    BOOL success = YES;
+    if (preserveExisting) {
+        success = [self executeStatement:@"UPDATE history_items SET sequence = ?, updated_at = ? WHERE history_key = ? AND content = ?"
+                                bindings:@[@([self nextSequence]), @(NSDate.date.timeIntervalSince1970), historyKey, dictionary[kKayokoItemKeyContent]]
+                                   error:error];
+    }
+    if (success && (!preserveExisting || sqlite3_changes(_database) == 0)) {
+        success = [self upsertItemDictionaryWithoutTransaction:dictionary inHistoryKey:historyKey error:error];
+    }
     if (success) {
         success = [self trimHistoryKey:historyKey toLimit:limit error:error];
     }

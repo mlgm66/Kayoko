@@ -1,29 +1,28 @@
 #!/bin/bash
 #
-# Kayoko package builder.
+# Kayoko 打包脚本。
 #
-# Building and packaging are handled by Theos. Each scheme needs a separately
-# compiled binary because install names and path bases differ between schemes.
+# 由 Theos 编译和打包，各方案的安装名称和路径不同，需分别编译。
 #
-# Usage:
+# 用法：
 #   ./build.sh roothide
 #   ./build.sh rootless
 #   ./build.sh rootful
 #
-# Optional environment overrides:
-#   THEOS=/path/to/theos       # otherwise auto-detected
+# 可选环境变量：
+#   THEOS=/path/to/theos       # 未设置或路径无效时自动查找
 #
-# Output debs land in ./packages/. The architecture suffix distinguishes variants.
+# DEB 输出到 ./packages/，文件名中的架构后缀用于区分不同方案。
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-# Keep common package-manager paths available in minimal shells.
+# 补充常用包管理器路径，确保精简 Shell 环境也能找到所需工具。
 export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
 
-# --- Resolve Theos -----------------------------------------------------------
+# --- 查找 Theos -------------------------------------------------------------
 if [[ -z "${THEOS:-}" || ! -d "${THEOS:-}" ]]; then
     for candidate in "${HOME}/theos" /opt/theos "${HOME}/theos-roothide"; do
         if [[ -d "$candidate" ]]; then
@@ -59,11 +58,9 @@ cleanup_build_artifacts() {
     \) -delete 2>/dev/null || true
 }
 
-# --- Build one scheme --------------------------------------------------------
-# Theos writes the deb as <package>_<version>_<arch>.deb. The selected package
-# scheme controls the installation layout; CPU architectures remain defined by
-# the root Makefile.
-# theos_scheme: value passed to THEOS_PACKAGE_SCHEME ("" for rootful)
+# --- 构建指定方案 ------------------------------------------------------------
+# Theos 输出 <包名>_<版本>_<架构>.deb；方案决定安装布局，CPU 架构由根目录 Makefile 定义。
+# theos_scheme 传给 THEOS_PACKAGE_SCHEME，rootful 使用空字符串。
 build_one() {
     local label="$1"
     local theos_scheme="$2"
@@ -75,7 +72,7 @@ build_one() {
     THEOS_PACKAGE_SCHEME="$theos_scheme" "$MAKE_BIN" package FINALPACKAGE=1
 }
 
-# --- Dispatch ----------------------------------------------------------------
+# --- 选择构建方案 ------------------------------------------------------------
 scheme="${1:-}"
 case "$scheme" in
     -h|--help|help)

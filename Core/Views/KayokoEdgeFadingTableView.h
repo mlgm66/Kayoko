@@ -9,6 +9,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+static CGFloat const kKayokoListEdgeFadeHeight = 20;
+
 @interface KayokoEdgeFadingTableView : UITableView
 @property(nonatomic, assign) CGFloat edgeFadeWidth;
 @property(nonatomic, assign) CGFloat edgeFadeLeadingScrollOffset;

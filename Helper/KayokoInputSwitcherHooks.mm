@@ -15,11 +15,11 @@
 
 static NSString *const kKayokoInputSwitcherItemIdentifier = @"com.mlgm.kayoko.globe";
 static Ivar kayokoInputSwitcherItemsIvar;
+static char kayokoInputSwitcherDictationKey;
 
 CHDeclareClass(UIInputSwitcherView);
 
 @interface UIInputSwitcherView : UIView
-- (BOOL)isForDictation;
 - (void)hide;
 @end
 
@@ -38,7 +38,7 @@ CHDeclareClass(UIInputSwitcherView);
 
 CHOptimizedMethod0(self, void, UIInputSwitcherView, _reloadInputSwitcherItems) {
     CHSuper0(UIInputSwitcherView, _reloadInputSwitcherItems);
-    if ([self isForDictation]) {
+    if ([objc_getAssociatedObject(self, &kayokoInputSwitcherDictationKey) boolValue]) {
         return;
     }
     NSArray *items = object_getIvar(self, kayokoInputSwitcherItemsIvar);
@@ -57,8 +57,26 @@ CHOptimizedMethod0(self, void, UIInputSwitcherView, _reloadInputSwitcherItems) {
     [item setLocalizedTitle:KayokoHelperLocalizedString(@"Kayoko")];
     if (item) {
         [newItems insertObject:item atIndex:newItems.count ? newItems.count - 1 : 0];
-        object_setIvar(self, kayokoInputSwitcherItemsIvar, newItems);
+        object_setIvarWithStrongDefault(self, kayokoInputSwitcherItemsIvar, newItems);
     }
+}
+
+CHOptimizedMethod5(self, id, UIInputSwitcherView, buttonPressed, id, button, withEvent, id, event, location, CGPoint,
+                   location, isForDictation, BOOL, isForDictation, tapAction, id, tapAction) {
+    objc_setAssociatedObject(self, &kayokoInputSwitcherDictationKey, @(isForDictation),
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return CHSuper5(UIInputSwitcherView, buttonPressed, button, withEvent, event, location, location,
+                    isForDictation, isForDictation, tapAction, tapAction);
+}
+
+CHOptimizedMethod6(self, id, UIInputSwitcherView, buttonPressed, id, button, withEvent, id, event, location, CGPoint,
+                   location, isLocationInsideViewHitArea, BOOL, isLocationInsideViewHitArea, isForDictation, BOOL,
+                   isForDictation, tapAction, id, tapAction) {
+    objc_setAssociatedObject(self, &kayokoInputSwitcherDictationKey, @(isForDictation),
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return CHSuper6(UIInputSwitcherView, buttonPressed, button, withEvent, event, location, location,
+                    isLocationInsideViewHitArea, isLocationInsideViewHitArea, isForDictation, isForDictation,
+                    tapAction, tapAction);
 }
 
 CHOptimizedMethod1(self, void, UIInputSwitcherView, didSelectItemAtIndex, unsigned long long, index) {
@@ -87,7 +105,8 @@ CHOptimizedMethod1(self, void, UIInputSwitcherView, didSelectItemAtIndex, unsign
       Class itemClass = NSClassFromString(@"UIInputSwitcherItem");
       Ivar itemsIvar = class_getInstanceVariable(viewClass, "m_inputSwitcherItems");
       if (!itemsIvar || ivar_getTypeEncoding(itemsIvar)[0] != '@' ||
-          !KayokoHookMethodMatches(viewClass, @selector(isForDictation), "B@:") ||
+          !KayokoHookMethodMatches(viewClass, @selector(buttonPressed:withEvent:location:isForDictation:tapAction:),
+                                  "@@:@@{CGPoint=dd}B@?") ||
           !KayokoHookMethodMatches(viewClass, @selector(hide), "v@:") ||
           !KayokoHookMethodMatches(viewClass, @selector(_reloadInputSwitcherItems), "v@:") ||
           !KayokoHookMethodMatches(viewClass, @selector(didSelectItemAtIndex:), "v@:Q") ||
@@ -99,6 +118,13 @@ CHOptimizedMethod1(self, void, UIInputSwitcherView, didSelectItemAtIndex, unsign
       kayokoInputSwitcherItemsIvar = itemsIvar;
       CHLoadClass_(&UIInputSwitcherView$, viewClass);
 
+      CHHook5(UIInputSwitcherView, buttonPressed, withEvent, location, isForDictation, tapAction);
+      if (KayokoHookMethodMatches(viewClass,
+                                 @selector(buttonPressed:withEvent:location:isLocationInsideViewHitArea:isForDictation:tapAction:),
+                                 "@@:@@{CGPoint=dd}BB@?")) {
+          CHHook6(UIInputSwitcherView, buttonPressed, withEvent, location, isLocationInsideViewHitArea,
+                  isForDictation, tapAction);
+      }
       CHHook0(UIInputSwitcherView, _reloadInputSwitcherItems);
       CHHook1(UIInputSwitcherView, didSelectItemAtIndex);
     });

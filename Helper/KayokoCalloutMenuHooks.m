@@ -34,6 +34,12 @@ static NSString *const kKayokoMenuActionSelectorName = @"_Kayoko_OpenTools_ab2e3
 
 static SEL kayokoMenuActionSelector(void) { return NSSelectorFromString(kKayokoMenuActionSelectorName); }
 
+static BOOL kayokoIsExistingMenuEntry(UIMenuElement *item) {
+    return ([item isKindOfClass:[UICommand class]] && [(UICommand *)item action] == kayokoMenuActionSelector()) ||
+           (([item isKindOfClass:[UIMenu class]] || [item isKindOfClass:[UIAction class]]) &&
+            [item.title isEqualToString:kKayokoMenuName]);
+}
+
 static void kayokoOpenKayokoResponderAction(id self, SEL _cmd) {
     if ([self isKindOfClass:[UIResponder class]]) {
         [[KayokoHelperRuntime sharedRuntime] activateKayokoFromResponder:self];
@@ -45,7 +51,7 @@ static void kayokoOpenKayokoResponderAction(id self, SEL _cmd) {
 CHOptimizedMethod2(self, void, _UIEditMenuPresentation, displayMenu, UIMenu *, menu, configuration, id, configuration) {
     NSMutableArray<UIMenuElement *> *build = [NSMutableArray new];
     for (id item in [menu children]) {
-        if ([item isKindOfClass:[UICommand class]] && [(UICommand *)item action] == kayokoMenuActionSelector()) {
+        if (kayokoIsExistingMenuEntry(item)) {
             continue;
         }
         if (![item isKindOfClass:[UIMenu class]]) {
@@ -59,8 +65,7 @@ CHOptimizedMethod2(self, void, _UIEditMenuPresentation, displayMenu, UIMenu *, m
         }
         NSMutableArray<UIMenuElement *> *rebuildAppleEditMenu = [NSMutableArray array];
         for (UIMenuElement *child in submenu.children) {
-            if ([child isKindOfClass:[UICommand class]] &&
-                [(UICommand *)child action] == kayokoMenuActionSelector()) {
+            if (kayokoIsExistingMenuEntry(child)) {
                 continue;
             }
             [rebuildAppleEditMenu addObject:child];

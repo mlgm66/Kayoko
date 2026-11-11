@@ -8,6 +8,9 @@
 #import "KayokoHelperRuntime.h"
 #import "KayokoNotificationKeys.h"
 #import "KayokoSceneSettingKeys.h"
+#import "../Shared/Scripts/KayokoScriptPaste.h"
+#import "KayokoScriptPasteVerification.h"
+#import <unistd.h>
 #import "../Shared/KayokoHookValidation.h"
 
 #import <AudioToolbox/AudioToolbox.h>
@@ -36,6 +39,7 @@ static const NSTimeInterval kKayokoKeyboardHideSuppressionInterval = 1.0;
 @end
 
 @interface UIKeyboardImpl : UIView
+- (id)_sessionIdentifier;
 + (instancetype)activeInstance;
 @property(nonatomic, strong, readonly) id inputDelegate;
 @end
@@ -240,10 +244,13 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign, getter=isSpringBoardRuntime) BOOL springBoardRuntime;
 @property(nonatomic, assign, getter=isAutomaticallyPasteEnabled) BOOL automaticallyPasteEnabled;
 @property(nonatomic, assign, getter=isHapticFeedbackEnabled) BOOL hapticFeedbackEnabled;
-@property(nonatomic, assign) BOOL applicationInForeground;
 
 #pragma mark - Sessions
 
+@property(nonatomic) int scriptFocusToken;
+@property(nonatomic) int scriptRequestToken;
+@property(nonatomic, weak) UIResponder *scriptResponder;
+@property(nonatomic, copy) id scriptSession;
 @property(nonatomic, strong) KayokoHelperFocusSession *focusSession;
 @property(nonatomic, strong) KayokoHelperPendingPasteSession *pendingPasteSession;
 
@@ -261,8 +268,8 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark - Runtime Hook Events
 
 - (void)keyboardWindowDidMoveToWindow;
-- (void)keyboardImplDidBecomeActive;
-- (void)keyboardImplWillLeaveActive;
+- (void)applicationDidBecomeActiveWithNotification:(NSNotification *)notification;
+- (void)applicationWillResignActiveWithNotification:(NSNotification *)notification;
 - (void)keyboardImplDidSetDelegate:(id)delegate;
 - (void)rememberResponderWillResign:(UIResponder *)responder;
 
@@ -380,19 +387,24 @@ CHOptimizedMethod0(self, void, UIKBInputBackdropView, didMoveToWindow) {
     [[KayokoHelperRuntime sharedRuntime] keyboardWindowDidMoveToWindow];
 }
 
-CHOptimizedMethod1(self, void, UIKeyboardImpl, applicationResumed, id, application) {
-    CHSuper1(UIKeyboardImpl, applicationResumed, application);
-    [[KayokoHelperRuntime sharedRuntime] keyboardImplDidBecomeActive];
-}
-
-CHOptimizedMethod1(self, void, UIKeyboardImpl, applicationSuspendedEventsOnly, id, application) {
-    CHSuper1(UIKeyboardImpl, applicationSuspendedEventsOnly, application);
-    [[KayokoHelperRuntime sharedRuntime] keyboardImplWillLeaveActive];
+CHOptimizedMethod1(self, void, UIKeyboardImpl, setDelegate, id, delegate) {
+    CHSuper1(UIKeyboardImpl, setDelegate, delegate);
+    [[KayokoHelperRuntime sharedRuntime] keyboardImplDidSetDelegate:delegate];
 }
 
 CHOptimizedMethod3(self, void, UIKeyboardImpl, setDelegate, id, delegate, force, BOOL, force, delayEndInputSession,
                    BOOL, delayEndInputSession) {
     CHSuper3(UIKeyboardImpl, setDelegate, delegate, force, force, delayEndInputSession, delayEndInputSession);
+    [[KayokoHelperRuntime sharedRuntime] keyboardImplDidSetDelegate:delegate];
+}
+
+CHOptimizedMethod2(self, void, UIKeyboardImpl, setDelegate, id, delegate, force, BOOL, force) {
+    CHSuper2(UIKeyboardImpl, setDelegate, delegate, force, force);
+    [[KayokoHelperRuntime sharedRuntime] keyboardImplDidSetDelegate:delegate];
+}
+
+CHOptimizedMethod3(self, void, UIKeyboardImpl, setDelegate, id, delegate, force, BOOL, force, fromBecomeFirstResponder, BOOL, fromBecomeFirstResponder) {
+    CHSuper3(UIKeyboardImpl, setDelegate, delegate, force, force, fromBecomeFirstResponder, fromBecomeFirstResponder);
     [[KayokoHelperRuntime sharedRuntime] keyboardImplDidSetDelegate:delegate];
 }
 
@@ -442,7 +454,8 @@ CHOptimizedMethod0(self, BOOL, UITextField, resignFirstResponder) {
 - (instancetype)initPrivate {
     self = [super init];
     if (self) {
-        _applicationInForeground = YES;
+        _scriptFocusToken = NOTIFY_TOKEN_INVALID;
+        _scriptRequestToken = NOTIFY_TOKEN_INVALID;
         _focusSession = [[KayokoHelperFocusSession alloc] init];
         _pendingPasteSession = [[KayokoHelperPendingPasteSession alloc] init];
     }
@@ -514,12 +527,6 @@ CHOptimizedMethod0(self, BOOL, UITextField, resignFirstResponder) {
 }
 
 - (void)paste {
-    if (!self.applicationInForeground) {
-        HBLogDebug(@"Kayoko: helper paste ignored because application is not foreground process=%@",
-                   [[NSProcessInfo processInfo] processName]);
-        return;
-    }
-
     UIApplication *application = [UIApplication sharedApplication];
     if (![self applicationHasPasteContext:application]) {
         HBLogDebug(@"Kayoko: helper paste ignored because application has no paste context process=%@ state=%ld",
@@ -606,17 +613,62 @@ CHOptimizedMethod0(self, BOOL, UITextField, resignFirstResponder) {
     [self postCoreHide];
 }
 
-- (void)keyboardImplDidBecomeActive {
-    self.applicationInForeground = YES;
+- (void)applicationDidBecomeActiveWithNotification:(NSNotification *)notification {
     [self schedulePendingPasteCheck];
 }
 
-- (void)keyboardImplWillLeaveActive {
-    self.applicationInForeground = NO;
+- (void)applicationWillResignActiveWithNotification:(NSNotification *)notification {
     [self.pendingPasteSession clear];
 }
 
+- (void)updateScriptPasteFocus:(UIResponder *)responder {
+    if (self.scriptFocusToken == NOTIFY_TOKEN_INVALID) return;
+    if (!KayokoCanVerifyScriptPaste(responder) || [self responderIsKayokoOwned:responder]) responder = nil;
+    UIKeyboardImpl *keyboard = [NSClassFromString(@"UIKeyboardImpl") activeInstance];
+    id session = [keyboard respondsToSelector:@selector(_sessionIdentifier)] ? [keyboard _sessionIdentifier] : nil;
+    if (responder && self.scriptResponder == responder && (!session || [session isEqual:self.scriptSession])) return;
+    self.scriptResponder = responder;
+    self.scriptSession = session;
+    notify_set_state(self.scriptFocusToken, 0);
+    if (self.scriptRequestToken != NOTIFY_TOKEN_INVALID) {
+        notify_cancel(self.scriptRequestToken);
+        self.scriptRequestToken = NOTIFY_TOKEN_INVALID;
+    }
+    if (!responder) return;
+    uint64_t focus = ((uint64_t)arc4random() << 32) | arc4random() | 1;
+    NSString *name = KayokoScriptRequestName(getpid(), focus);
+    __weak UIResponder *field = responder;
+    int request;
+    if (notify_register_dispatch(name.UTF8String, &request, dispatch_get_main_queue(), ^(int token) {
+        if (token != self.scriptRequestToken) return;
+        uint64_t ticket = 0;
+        if (notify_get_state(token, &ticket) != NOTIFY_STATUS_OK || !ticket) return;
+        notify_set_state(token, 0);
+        UIResponder *target = field;
+        UIWindow *window = [(UIView *)target window];
+        id currentSession = [keyboard respondsToSelector:@selector(_sessionIdentifier)] ? [keyboard _sessionIdentifier] : nil;
+        BOOL ready = target && target == self.scriptResponder && target == [self activeKeyboardInputDelegate] &&
+            (!session || [session isEqual:currentSession]) && window.windowScene.activationState == UISceneActivationStateForegroundActive &&
+            window && UIApplication.sharedApplication.applicationState == UIApplicationStateActive &&
+            (uint32_t)UIPasteboard.generalPasteboard.changeCount == (uint32_t)ticket;
+        NSString *reply = KayokoScriptReceiptName(name, ticket);
+        int ack;
+        if (notify_register_check(reply.UTF8String, &ack) != NOTIFY_STATUS_OK) return;
+        void (^finish)(BOOL) = ^(BOOL pasted) {
+            notify_set_state(ack, pasted ? ticket : ~ticket);
+            notify_post(reply.UTF8String);
+            notify_cancel(ack);
+        };
+        uint64_t fingerprint = 0;
+        if (!ready || notify_get_state(ack, &fingerprint) != NOTIFY_STATUS_OK) { finish(NO); return; }
+        KayokoDispatchScriptPaste(target, fingerprint, finish);
+    }) != NOTIFY_STATUS_OK) return;
+    self.scriptRequestToken = request;
+    notify_set_state(self.scriptFocusToken, focus);
+}
+
 - (void)keyboardImplDidSetDelegate:(id)delegate {
+    [self updateScriptPasteFocus:delegate];
     if ([delegate isKindOfClass:[UIResponder class]] && [self responderIsKayokoOwned:(UIResponder *)delegate]) {
         [self rememberKayokoKeyboardInput];
         return;
@@ -763,6 +815,10 @@ CHOptimizedMethod0(self, BOOL, UITextField, resignFirstResponder) {
 }
 
 - (BOOL)applicationCanPerformPaste:(UIApplication *)application {
+    if (!application || [application applicationState] != UIApplicationStateActive) {
+        return NO;
+    }
+
     if (self.isSpringBoardRuntime) {
         if (![self capturedFocusKeyWindowForSpringBoard]) {
             return NO;
@@ -997,7 +1053,8 @@ CHOptimizedMethod0(self, BOOL, UITextField, resignFirstResponder) {
         return NO;
     }
 
-    BOOL requiresKeyboardInputDelegate = responder == self.focusSession.keyboardInputDelegate;
+    BOOL requiresKeyboardInputDelegate =
+        self.isSpringBoardRuntime && responder == self.focusSession.keyboardInputDelegate;
     if (!requiresKeyboardInputDelegate) {
         if ([responder isFirstResponder]) {
             return YES;
@@ -1144,9 +1201,8 @@ CHOptimizedMethod0(self, BOOL, UITextField, resignFirstResponder) {
 - (BOOL)performPaste {
     UIApplication *activeApplication = [UIApplication sharedApplication];
     BOOL canPerformPaste = [self applicationCanPerformPaste:activeApplication];
-    if (!self.applicationInForeground || !canPerformPaste) {
-        HBLogDebug(@"Kayoko: perform paste skipped foreground=%@ canPerformPaste=%@ process=%@ state=%ld",
-                   self.applicationInForeground ? @"YES" : @"NO", canPerformPaste ? @"YES" : @"NO",
+    if (!canPerformPaste) {
+        HBLogDebug(@"Kayoko: perform paste skipped process=%@ state=%ld",
                    [[NSProcessInfo processInfo] processName], (long)[activeApplication applicationState]);
         return NO;
     }
@@ -1219,7 +1275,7 @@ CHOptimizedMethod0(self, BOOL, UITextField, resignFirstResponder) {
     UIWindow *activeKeyWindow = [self activeKeyWindowForApplication:application];
     BOOL pendingPasteIsReady = [self pendingPasteIsReady];
 
-    if (!self.applicationInForeground) {
+    if (!application || [application applicationState] != UIApplicationStateActive) {
         HBLogDebug(@"Kayoko: pending paste cleared because application left foreground token=%lu",
                    (unsigned long)self.pendingPasteSession.token);
         [self.pendingPasteSession clear];
@@ -1415,14 +1471,14 @@ CHOptimizedMethod0(self, BOOL, UITextField, resignFirstResponder) {
       }
       Class keyboardImplClass = NSClassFromString(@"UIKeyboardImpl");
       CHLoadClass_(&UIKeyboardImpl$, keyboardImplClass);
-      if (KayokoHookMethodMatches(keyboardImplClass, @selector(applicationResumed:), "v@:@")) {
-          CHHook1(UIKeyboardImpl, applicationResumed);
-      }
-      if (KayokoHookMethodMatches(keyboardImplClass, @selector(applicationSuspendedEventsOnly:), "v@:@")) {
-          CHHook1(UIKeyboardImpl, applicationSuspendedEventsOnly);
-      }
       if (KayokoHookMethodMatches(keyboardImplClass, @selector(setDelegate:force:delayEndInputSession:), "v@:@BB")) {
           CHHook3(UIKeyboardImpl, setDelegate, force, delayEndInputSession);
+      } else if (KayokoHookMethodMatches(keyboardImplClass, @selector(setDelegate:force:fromBecomeFirstResponder:), "v@:@BB")) {
+          CHHook3(UIKeyboardImpl, setDelegate, force, fromBecomeFirstResponder);
+      } else if (KayokoHookMethodMatches(keyboardImplClass, @selector(setDelegate:force:), "v@:@B")) {
+          CHHook2(UIKeyboardImpl, setDelegate, force);
+      } else if (KayokoHookMethodMatches(keyboardImplClass, @selector(setDelegate:), "v@:@")) {
+          CHHook1(UIKeyboardImpl, setDelegate);
       }
     });
 }
@@ -1458,7 +1514,21 @@ CHOptimizedMethod0(self, BOOL, UITextField, resignFirstResponder) {
     }
     self.installedObservers = YES;
 
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(applicationDidBecomeActiveWithNotification:)
+                                                 name:UIApplicationDidBecomeActiveNotification
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(applicationWillResignActiveWithNotification:)
+                                                 name:UIApplicationWillResignActiveNotification
+                                               object:nil];
+
     if (self.isAutomaticallyPasteEnabled) {
+        int focus;
+        if (notify_register_check(KayokoScriptFocusName(getpid()).UTF8String, &focus) == NOTIFY_STATUS_OK) {
+            self.scriptFocusToken = focus;
+            [self updateScriptPasteFocus:[self activeKeyboardInputDelegate]];
+        }
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
                                         kayokoHelperPasteNotificationCallback,
                                         (__bridge CFStringRef)kKayokoNotificationKeyHelperPaste, NULL,

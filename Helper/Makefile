@@ -8,6 +8,7 @@ KayokoHelper_FILES += KayokoHelperProcessContext.m
 KayokoHelper_FILES += KayokoHelperHookInstaller.m
 KayokoHelper_FILES += KayokoHelperLocalization.m
 KayokoHelper_FILES += KayokoHelperRuntime.m
+KayokoHelper_FILES += KayokoScriptPasteVerification.m
 KayokoHelper_FILES += KayokoPredictionBarHooks.m
 KayokoHelper_FILES += KayokoCalloutMenuHooks.m
 KayokoHelper_FILES += KayokoInputSwitcherHooks.mm

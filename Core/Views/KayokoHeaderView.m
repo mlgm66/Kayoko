@@ -25,13 +25,14 @@ static CGFloat const kKayokoSegmentBottomInset = 10;
 @property(nonatomic, strong, readwrite) UIButton *leadingButton;
 @property(nonatomic, strong, readwrite) UIButton *editButton;
 @property(nonatomic, strong) UIStackView *trailingButtonStack;
+@property(nonatomic, strong) NSLayoutConstraint *titleLeadingConstraint;
 @property(nonatomic, copy) NSArray<NSLayoutConstraint *> *trailingButtonWidthConstraints;
 @property(nonatomic, strong, readwrite) UIButton *trailingButton;
 @property(nonatomic, strong, readwrite) UIButton *alternateTrailingButton;
 @property(nonatomic, strong, readwrite) UIButton *openLinkButton;
 @property(nonatomic, strong, readwrite) UIButton *selectionActionButton;
 @property(nonatomic, strong, readwrite) UIButton *translationButton;
-@property(nonatomic, strong, readwrite) UIButton *bookButton;
+@property(nonatomic, strong, readwrite) UIButton *scriptButton;
 @property(nonatomic, strong, readwrite) UIButton *shareButton;
 @property(nonatomic, strong, readwrite) UISegmentedControl *historySegmentedControl;
 
@@ -126,14 +127,19 @@ static CGFloat const kKayokoSegmentBottomInset = 10;
         [_alternateTrailingButton setTranslatesAutoresizingMaskIntoConstraints:NO];
 
         _translationButton = [[UIButton alloc] init];
+        UIImage *translate = [UIImage imageNamed:@"translate" inBundle:bundle compatibleWithTraitCollection:nil];
+        [_translationButton setImage:[translate imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
+                            forState:UIControlStateNormal];
+        [_translationButton setTintColor:[UIColor labelColor]];
+        [_translationButton.imageView setContentMode:UIViewContentModeScaleAspectFit];
         [_translationButton setHidden:YES];
         [_trailingButtonStack addArrangedSubview:_translationButton];
         [_translationButton setTranslatesAutoresizingMaskIntoConstraints:NO];
 
-        _bookButton = [[UIButton alloc] init];
-        [_bookButton setHidden:YES];
-        [_trailingButtonStack addArrangedSubview:_bookButton];
-        [_bookButton setTranslatesAutoresizingMaskIntoConstraints:NO];
+        _scriptButton = [[UIButton alloc] init];
+        [_scriptButton setHidden:YES];
+        [_trailingButtonStack addArrangedSubview:_scriptButton];
+        [_scriptButton setTranslatesAutoresizingMaskIntoConstraints:NO];
 
         _shareButton = [[UIButton alloc] init];
         [_shareButton setHidden:YES];
@@ -165,6 +171,8 @@ static CGFloat const kKayokoSegmentBottomInset = 10;
         [self addSubview:_titleTapControl];
         [_titleTapControl setTranslatesAutoresizingMaskIntoConstraints:NO];
 
+        _titleLeadingConstraint = [[_titleLabel leadingAnchor] constraintEqualToAnchor:[self leadingAnchor]
+                                                        constant:kKayokoTitleLabelLeadingInset];
         [NSLayoutConstraint activateConstraints:@[
             [[_grabber topAnchor] constraintEqualToAnchor:[self topAnchor] constant:kKayokoGrabberTopInset],
             [[_grabber centerXAnchor] constraintEqualToAnchor:[self centerXAnchor]],
@@ -178,8 +186,7 @@ static CGFloat const kKayokoSegmentBottomInset = 10;
             [[_leadingButton topAnchor] constraintGreaterThanOrEqualToAnchor:[_grabber bottomAnchor] constant:8],
 
             [[_titleLabel centerYAnchor] constraintEqualToAnchor:[_leadingButton centerYAnchor]],
-            [[_titleLabel leadingAnchor] constraintEqualToAnchor:[self leadingAnchor]
-                                                        constant:kKayokoTitleLabelLeadingInset],
+            _titleLeadingConstraint,
 
             [[_historySegmentedControl centerYAnchor] constraintEqualToAnchor:[_leadingButton centerYAnchor]],
             [[_historySegmentedControl centerXAnchor] constraintEqualToAnchor:[self centerXAnchor]],
@@ -219,6 +226,20 @@ static CGFloat const kKayokoSegmentBottomInset = 10;
         MAX(0, MIN(12, (availableWidth - visibleCount * buttonWidth) / (visibleCount - 1))) : 12;
     [[self trailingButtonStack] setSpacing:spacing];
     [super layoutSubviews];
+}
+
+- (void)useCenteredPageTitle {
+    [self setHistorySwitcherVisible:NO animated:NO];
+    self.titleTapControl.hidden = YES;
+    self.titleLeadingConstraint.active = NO;
+    self.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    self.titleLabel.adjustsFontForContentSizeCategory = YES;
+    self.titleLabel.textAlignment = NSTextAlignmentCenter;
+    NSLayoutConstraint *center = [self.titleLabel.centerXAnchor constraintEqualToAnchor:self.centerXAnchor];
+    center.priority = UILayoutPriorityDefaultHigh;
+    [NSLayoutConstraint activateConstraints:@[
+        center, [self.titleLabel.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.leadingButton.trailingAnchor constant:8]
+    ]];
 }
 
 - (void)setTitleText:(NSString *)title {

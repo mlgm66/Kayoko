@@ -9,9 +9,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)presentTranslationForText:(NSString *)text
                   fromController:(UIViewController *)controller
                       anchorView:(UIView *)anchorView;
-- (BOOL)presentLookupForText:(NSString *)text fromController:(UIViewController *)controller;
 - (void)dismissActionsAnimated:(BOOL)animated;
-- (BOOL)shouldSuppressExternalHideRequest;
 
 @end
 

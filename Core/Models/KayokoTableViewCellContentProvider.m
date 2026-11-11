@@ -16,6 +16,7 @@ NS_ASSUME_NONNULL_BEGIN
 @interface KayokoTableViewCellContentProvider ()
 @property(nonatomic, strong) KayokoApplicationMetadataProvider *metadataProvider;
 @property(nonatomic, strong) NSRelativeDateTimeFormatter *relativeDateTimeFormatter;
+@property(nonatomic, strong) NSDateFormatter *captureDateFormatter;
 @property(nonatomic, strong) NSByteCountFormatter *byteCountFormatter;
 @property(nonatomic, strong) NSCache<NSString *, NSNumber *> *characterCountCache;
 @end
@@ -36,6 +37,9 @@ NS_ASSUME_NONNULL_END
         if ([localizationIdentifier length] > 0) {
             [_relativeDateTimeFormatter setLocale:[[NSLocale alloc] initWithLocaleIdentifier:localizationIdentifier]];
         }
+        _captureDateFormatter = [[NSDateFormatter alloc] init];
+        [_captureDateFormatter setLocale:[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"]];
+        [_captureDateFormatter setDateFormat:@"yyyy/MM/dd HH:mm"];
         _byteCountFormatter = [[NSByteCountFormatter alloc] init];
         [_byteCountFormatter setCountStyle:NSByteCountFormatterCountStyleFile];
         _characterCountCache = [[NSCache alloc] init];
@@ -135,7 +139,7 @@ NS_ASSUME_NONNULL_END
         isImage ? itemDetailsMode != kKayokoItemDetailsModeOff : itemDetailsMode == kKayokoItemDetailsModeAll;
     [content setShowsDetail:showsDetail];
     if (showsDetail) {
-        NSMutableArray<NSString *> *detailComponents = [[NSMutableArray alloc] initWithCapacity:3];
+        NSMutableArray<NSString *> *detailComponents = [[NSMutableArray alloc] initWithCapacity:4];
         if ([item capturedAt]) {
             [detailComponents addObject:[self relativeTimeTextForDate:[item capturedAt]]];
         }
@@ -156,6 +160,9 @@ NS_ASSUME_NONNULL_END
                                                                                              value:nil
                                                                                              table:@"Tweak"];
             [detailComponents addObject:[NSString stringWithFormat:format, (unsigned long)characterCount]];
+        }
+        if ([item capturedAt]) {
+            [detailComponents addObject:[[self captureDateFormatter] stringFromDate:[item capturedAt]]];
         }
         NSMutableAttributedString *attributedDetailText = [[NSMutableAttributedString alloc] init];
         for (NSUInteger index = 0; index < [detailComponents count]; index++) {

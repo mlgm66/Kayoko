@@ -68,8 +68,6 @@ NS_ASSUME_NONNULL_END
         _imageEditPresenter = [[KayokoImageEditPresenter alloc] init];
         [[[_previewView headerView] translationButton] addTarget:self
             action:@selector(handleTranslationButtonPressed) forControlEvents:UIControlEventTouchUpInside];
-        [[[_previewView headerView] bookButton] addTarget:self
-            action:@selector(handleBookButtonPressed) forControlEvents:UIControlEventTouchUpInside];
         [[[_previewView headerView] shareButton]
                    addTarget:self
                       action:@selector(handleShareButtonPressed)
@@ -89,6 +87,7 @@ NS_ASSUME_NONNULL_END
 
 - (void)showPreviewWithItem:(KayokoPasteboardItem *)item sourceHistoryKey:(NSString *)sourceHistoryKey {
     self.previewGeneration++;
+    [self.textActionPresenter dismissActionsAnimated:NO];
     [self setPreviewItem:item];
     [self setSourceHistoryKey:sourceHistoryKey];
     [[self previewView] setUserInteractionEnabled:YES];
@@ -192,18 +191,17 @@ NS_ASSUME_NONNULL_END
     [[headerView openLinkButton] setEnabled:canOpenLink];
     [[headerView openLinkButton] setAlpha:1.0];
     [[headerView openLinkButton] setAccessibilityLabel:[bundle localizedStringForKey:@"Open" value:nil table:@"Tweak"]];
-    [headerView updateStyleForButton:[headerView translationButton] withImageName:@"character.bubble"
-                          imageSize:kKayokoBackButtonImageSize tintColor:[UIColor labelColor]];
     [[headerView translationButton] setHidden:!isText || ![[self textActionPresenter] isTranslationAvailable]];
     [[headerView translationButton] setEnabled:hasText];
     [[headerView translationButton] setAlpha:hasText ? 1.0 : 0.35];
     [[headerView translationButton] setAccessibilityLabel:[bundle localizedStringForKey:@"Translate" value:nil table:@"Tweak"]];
-    [headerView updateStyleForButton:[headerView bookButton] withImageName:@"book.closed"
+    [headerView updateStyleForButton:[headerView scriptButton] withImageName:@"terminal"
                           imageSize:kKayokoBackButtonImageSize tintColor:[UIColor labelColor]];
-    [[headerView bookButton] setHidden:!isText];
-    [[headerView bookButton] setEnabled:hasText];
-    [[headerView bookButton] setAlpha:hasText ? 1.0 : 0.35];
-    [[headerView bookButton] setAccessibilityLabel:[bundle localizedStringForKey:@"Look Up" value:nil table:@"Tweak"]];
+    [[headerView scriptButton] setHidden:!isText];
+    BOOL hasScriptInput = isText && self.previewItem.content.length > 0;
+    [[headerView scriptButton] setEnabled:hasScriptInput];
+    [[headerView scriptButton] setAlpha:hasScriptInput ? 1.0 : 0.35];
+    [[headerView scriptButton] setAccessibilityLabel:[bundle localizedStringForKey:@"Scripts" value:nil table:@"Tweak"]];
 }
 
 - (NSString *)textForActions {
@@ -213,13 +211,6 @@ NS_ASSUME_NONNULL_END
 - (void)handleTranslationButtonPressed {
     if ([[self textActionPresenter] presentTranslationForText:[self textForActions] fromController:self
                                                  anchorView:[[[self previewView] headerView] translationButton]] &&
-        [self hapticFeedbackHandler]) {
-        [self hapticFeedbackHandler](UIImpactFeedbackStyleLight);
-    }
-}
-
-- (void)handleBookButtonPressed {
-    if ([[self textActionPresenter] presentLookupForText:[self textForActions] fromController:self] &&
         [self hapticFeedbackHandler]) {
         [self hapticFeedbackHandler](UIImpactFeedbackStyleLight);
     }
@@ -532,12 +523,11 @@ NS_ASSUME_NONNULL_END
     KayokoHeaderView *headerView = [[self previewView] headerView];
     [[headerView openLinkButton] setHidden:YES];
     [[headerView translationButton] setHidden:YES];
-    [[headerView bookButton] setHidden:YES];
+    [[headerView scriptButton] setHidden:YES];
 }
 
 - (BOOL)shouldSuppressExternalHideRequest {
-    return self.imageRestoreInProgress || [[self imageEditPresenter] shouldSuppressExternalHideRequest] ||
-           [[self textActionPresenter] shouldSuppressExternalHideRequest];
+    return self.imageRestoreInProgress || [[self imageEditPresenter] shouldSuppressExternalHideRequest];
 }
 
 @end

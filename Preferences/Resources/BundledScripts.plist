@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+    <dict>
+        <key>id</key><string>kayoko.links</string>
+        <key>name</key><string>Extract links</string>
+        <key>enabled</key><true/>
+        <key>code</key><string>// 提取文字中的网址，每个网址作为一个候选。
+function main(text) {
+  const starts = /https?:\/\//gi, adjacent = /[,;]https?:\/\//iy;
+  const stop = /[\s&lt;&gt;"'，。；、！？「」『』【】《》“”‘’（）]/;
+  const links = new Set();
+  let match;
+  while ((match = starts.exec(text))) {
+    let start = match.index;
+    const marker = text[start - 1];
+    if ('*_~`'.includes(marker) &amp;&amp; marker) {
+      while (start &gt; 0 &amp;&amp; text[start - 1] === marker) start--;
+    }
+    const wrap = text.slice(start, match.index);
+    let end = starts.lastIndex, depth = 0, brackets = 0;
+    for (; end &lt; text.length; end++) {
+      const c = text[end];
+      if (wrap &amp;&amp; text.startsWith(wrap, end) &amp;&amp;
+          (marker === '`' || !/[\p{L}\p{N}]/u.test(text[end + wrap.length] || ''))) break;
+      if (stop.test(c) || (c === ')' &amp;&amp; !depth) || (c === ']' &amp;&amp; !brackets)) break;
+      if (c === ',' || c === ';') {
+        adjacent.lastIndex = end;
+        if (adjacent.test(text)) break;
+      }
+      if (c === '[') brackets++;
+      if (c === ']') brackets--;
+      if (c === '(') depth++;
+      if (c === ')') depth--;
+    }
+    const link = text.slice(match.index, end).replace(/[.,;:!?]+$/, '');
+    if (/^https?:\/\/[^/?#\s]+/i.test(link)) links.add(link);
+    starts.lastIndex = end;
+  }
+  return [...links];
+}</string>
+        <key>input</key><string>资料：https://example.org/a，备用：https://example.net/b。</string>
+    </dict>
+    <dict>
+        <key>id</key><string>kayoko.lines</string>
+        <key>name</key><string>Choose a line</string>
+        <key>enabled</key><true/>
+        <key>code</key><string>// 按换行拆分文字，跳过空行，每行作为一个候选。
+function main(text) {
+  return text.split(/\r\n?|\n/).map(line =&gt; line.trim()).filter(Boolean);
+}</string>
+        <key>input</key><string>早上好
+
+明天见</string>
+    </dict>
+    <dict>
+        <key>id</key><string>kayoko.codes</string>
+        <key>name</key><string>Extract verification or pickup codes</string>
+        <key>enabled</key><true/>
+        <key>code</key><string>// 提取标为验证码或取件码的数字，保留开头的零。
+function main(text) {
+  const label = '(?:验证码|校验码|取件码|提货码|\\b(?:verification code|pickup code|OTP)\\b)';
+  const code = '([0-9]{1,4}(?:-[0-9]{1,5}){1,3}|[0-9]{4,8})(?![A-Za-z0-9_-])';
+  const after = label + '\\s*(?:(?:为|是|is)\\s*)?[:：]?\\s*' + code;
+  const before = '(?:^|[^A-Za-z0-9_-])' + code + '\\s*(?:[是为](?:您|你)?的?|is\\s+(?:(?:your|the)\\s+)?)\\s*' + label;
+  return [...new Set(Array.from(text.matchAll(new RegExp(after + '|' + before, 'gi')), m =&gt; m[1] || m[2]))];
+}</string>
+        <key>input</key><string>取件码 003821，10 分钟内有效</string>
+    </dict>
+    <dict>
+        <key>id</key><string>kayoko.tracking</string>
+        <key>name</key><string>Remove link tracking parameters</string>
+        <key>enabled</key><true/>
+        <key>code</key><string>// 移除网址中已知的跟踪参数，保留其他参数和页面锚点。
+function main(text) {
+  const url = text.trim();
+  if (!/^https?:\/\/[^\s/?#]+[^\s]*$/i.test(url)) return [];
+  const parts = url.match(/^([^?#]*)(?:\?([^#]*))?(#.*)?$/);
+  if (!parts[2]) return url;
+  const params = parts[2].split('&amp;');
+  const keep = params.filter(p =&gt; !/^(?:utm_[^=]+|fbclid|gclid)(?:=|$)/i.test(p));
+  if (keep.length === params.length) return url;
+  const query = keep.filter(Boolean).join('&amp;');
+  return parts[1] + (query ? '?' + query : '') + (parts[3] || '');
+}</string>
+        <key>input</key><string>https://example.org/page?id=42&amp;utm_source=share#info</string>
+    </dict>
+    <dict>
+        <key>id</key><string>kayoko.join</string>
+        <key>name</key><string>Merge wrapped lines</string>
+        <key>enabled</key><true/>
+        <key>code</key><string>// 合并同一段内的换行，保留空行分隔的段落。
+function main(text) {
+  return text.replace(/\r\n?/g, '\n').trim().split(/\n(?:[ \t]*\n)+/).map(paragraph =&gt;
+    paragraph.split('\n').map(line =&gt; line.trim()).reduce((left, right) =&gt;
+      left + (/[\p{Script=Han}，。！？：；、]$/u.test(left) || /^[\p{Script=Han}，。！？：；、]/u.test(right) ? '' : ' ') + right)
+  ).join('\n\n');
+}</string>
+        <key>input</key><string>把同一段的
+断行接起来。
+
+后一段仍保留。</string>
+    </dict>
+    <dict>
+        <key>id</key><string>kayoko.unique</string>
+        <key>name</key><string>Remove duplicate lines</string>
+        <key>enabled</key><true/>
+        <key>code</key><string>// 删除完全相同的行，保留第一次出现的顺序。
+function main(text) {
+  return [...new Set(text.split(/\r\n?|\n/))].join('\n');
+}</string>
+        <key>input</key><string>苹果
+梨
+苹果</string>
+    </dict>
+    <dict>
+        <key>id</key><string>kayoko.email</string>
+        <key>name</key><string>Extract email addresses</string>
+        <key>enabled</key><true/>
+        <key>code</key><string>// 提取文字中的邮箱地址，每个邮箱作为一个候选。
+function main(text) {
+  return [...new Set(text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [])];
+}</string>
+        <key>input</key><string>请联系 hello@example.org 或 team@example.net。</string>
+    </dict>
+    <dict>
+        <key>id</key><string>kayoko.split</string>
+        <key>name</key><string>Choose a delimited item</string>
+        <key>enabled</key><true/>
+        <key>code</key><string>// 按逗号、顿号或分号拆分文字，每项作为一个候选。
+function main(text) {
+  return text.split(/[,，、;；]/).map(item =&gt; item.trim()).filter(Boolean);
+}</string>
+        <key>input</key><string>红色、蓝色，绿色；紫色</string>
+    </dict>
+    <dict>
+        <key>id</key><string>kayoko.spacing</string>
+        <key>name</key><string>Space Chinese and Latin text</string>
+        <key>enabled</key><true/>
+        <key>code</key><string>// 在中文与相邻的英文、数字之间补上空格。
+function main(text) {
+  return text.replace(/(\p{Script=Han})([A-Za-z0-9])/gu, '$1 $2')
+             .replace(/([A-Za-z0-9])(\p{Script=Han})/gu, '$1 $2');
+}</string>
+        <key>input</key><string>用Kayoko处理文字，支持iOS16。</string>
+    </dict>
+    <dict>
+        <key>id</key><string>kayoko.github</string>
+        <key>name</key><string>GitHub file to raw link</string>
+        <key>enabled</key><true/>
+        <key>code</key><string>// 将 GitHub 文件页面链接转换为原始文件的直链。
+function main(text) {
+  const file = text.trim().match(/^https:\/\/github\.com\/([^/?#\s]+\/[^/?#\s]+)\/blob\/([^/?#\s]+\/[^?#\s]+)(?:[?#][^\s]*)?$/i);
+  return file ? 'https://raw.githubusercontent.com/' + file[1] + '/' + file[2] : [];
+}</string>
+        <key>input</key><string>https://github.com/user/repo/blob/main/config.json#L3</string>
+    </dict>
+</array>
+</plist>

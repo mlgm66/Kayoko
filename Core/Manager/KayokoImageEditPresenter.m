@@ -3,6 +3,49 @@
 #import "KayokoPasteboardManager.h"
 
 #import <QuickLook/QuickLook.h>
+#import <roothide.h>
+
+@interface KayokoImageEditPreviewItem : NSObject <QLPreviewItem>
+@property(nonatomic, strong) NSURL *previewItemURL;
+@property(nonatomic, strong) NSString *previewItemTitle;
+@end
+
+@implementation KayokoImageEditPreviewItem
+@end
+
+@interface KayokoImageEditPreviewController : QLPreviewController <QLPreviewControllerDataSource>
+@property(nonatomic, strong) NSURL *inputURL;
+@property(nonatomic, strong) KayokoImageEditPreviewItem *previewItem;
+- (instancetype)initWithInputURL:(NSURL *)inputURL title:(NSString *)title;
+@end
+
+@implementation KayokoImageEditPreviewController
+
+- (instancetype)initWithInputURL:(NSURL *)inputURL title:(NSString *)title {
+    self = [super init];
+    if (self) {
+        _inputURL = inputURL;
+        _previewItem = [[KayokoImageEditPreviewItem alloc] init];
+        _previewItem.previewItemURL = inputURL;
+        _previewItem.previewItemTitle = title;
+        self.dataSource = self;
+    }
+    return self;
+}
+
+- (NSInteger)numberOfPreviewItemsInPreviewController:(QLPreviewController *)controller {
+    return controller == self ? 1 : 0;
+}
+
+- (id<QLPreviewItem>)previewController:(QLPreviewController *)controller previewItemAtIndex:(NSInteger)index {
+    return controller == self && index == 0 ? self.previewItem : nil;
+}
+
+- (void)dealloc {
+    [[NSFileManager defaultManager] removeItemAtURL:[_inputURL URLByDeletingLastPathComponent] error:nil];
+}
+
+@end
 
 @interface KayokoImageEditSession : NSObject
 @property(nonatomic, strong) NSURL *directoryURL;
@@ -26,17 +69,11 @@
 @implementation KayokoImageEditSession
 @end
 
-static void KayokoRemoveImageEditFiles(KayokoImageEditSession *session) {
-    if (!session.saving) {
-        [[NSFileManager defaultManager] removeItemAtURL:session.directoryURL error:nil];
-    }
-}
-
 static NSString *KayokoImageEditLocalizedString(NSString *key) {
     return [[KayokoPasteboardManager localizationBundle] localizedStringForKey:key value:key table:@"Tweak"];
 }
 
-@interface KayokoImageEditPresenter () <QLPreviewControllerDataSource, QLPreviewControllerDelegate>
+@interface KayokoImageEditPresenter () <QLPreviewControllerDelegate>
 @property(nonatomic, strong, nullable) KayokoImageEditSession *session;
 @end
 
@@ -58,8 +95,9 @@ static NSString *KayokoImageEditLocalizedString(NSString *key) {
     if (!data.length) {
         return NO;
     }
-    NSURL *directory = [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
-        URLByAppendingPathComponent:[@"KayokoImageEditing" stringByAppendingPathComponent:[NSUUID UUID].UUIDString]
+    NSURL *directory = [[NSURL fileURLWithPath:jbroot(@"/var/mobile/Library/Caches/com.mlgm.kayoko/image-editing")
+                                 isDirectory:YES]
+        URLByAppendingPathComponent:[NSUUID UUID].UUIDString
                          isDirectory:YES];
     NSURL *inputURL = [directory URLByAppendingPathComponent:@"input.png"];
     if (![[NSFileManager defaultManager] createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:nil] ||
@@ -76,8 +114,8 @@ static NSString *KayokoImageEditLocalizedString(NSString *key) {
     session.presenter = controller;
     session.completion = completion;
     session.active = YES;
-    QLPreviewController *preview = [[QLPreviewController alloc] init];
-    preview.dataSource = self;
+    QLPreviewController *preview = [[KayokoImageEditPreviewController alloc]
+        initWithInputURL:inputURL title:KayokoImageEditLocalizedString(@"Edit Image")];
     preview.delegate = self;
     preview.modalPresentationStyle = UIModalPresentationOverFullScreen;
     session.controller = preview;
@@ -85,9 +123,7 @@ static NSString *KayokoImageEditLocalizedString(NSString *key) {
     __weak typeof(self) weakSelf = self;
     [controller presentViewController:preview animated:YES completion:^{
         if (!session.active) {
-            [preview dismissViewControllerAnimated:NO completion:^{
-                KayokoRemoveImageEditFiles(session);
-            }];
+            [preview dismissViewControllerAnimated:NO completion:nil];
         } else if (![preview presentingViewController]) {
             [weakSelf finishSession:session];
         }
@@ -97,14 +133,6 @@ static NSString *KayokoImageEditLocalizedString(NSString *key) {
 
 - (BOOL)shouldSuppressExternalHideRequest {
     return self.session.active;
-}
-
-- (NSInteger)numberOfPreviewItemsInPreviewController:(QLPreviewController *)controller {
-    return self.session.controller == controller ? 1 : 0;
-}
-
-- (id<QLPreviewItem>)previewController:(QLPreviewController *)controller previewItemAtIndex:(NSInteger)index {
-    return self.session.inputURL;
 }
 
 - (QLPreviewItemEditingMode)previewController:(QLPreviewController *)controller editingModeForPreviewItem:(id<QLPreviewItem>)previewItem {
@@ -161,7 +189,6 @@ static NSString *KayokoImageEditLocalizedString(NSString *key) {
             session.saving = NO;
             KayokoImageEditPresenter *strongSelf = weakSelf;
             if (!session.active || strongSelf.session != session) {
-                KayokoRemoveImageEditFiles(session);
                 return;
             }
             if (!updatedItem || error) {
@@ -233,9 +260,7 @@ static NSString *KayokoImageEditLocalizedString(NSString *key) {
         }]];
         [presenter presentViewController:alert animated:YES completion:^{
             if (!session.active) {
-                [alert dismissViewControllerAnimated:NO completion:^{
-                    KayokoRemoveImageEditFiles(session);
-                }];
+                [alert dismissViewControllerAnimated:NO completion:nil];
             }
         }];
     }];
@@ -305,12 +330,10 @@ static NSString *KayokoImageEditLocalizedString(NSString *key) {
     session.active = NO;
     self.session = nil;
     session.controller.delegate = nil;
-    session.controller.dataSource = nil;
     void (^completion)(KayokoPasteboardItem *) = session.completion;
     session.completion = nil;
     session.afterDismiss = nil;
     session.retryAlert = nil;
-    KayokoRemoveImageEditFiles(session);
     if (completion) {
         completion(session.updatedItem);
     }
@@ -326,18 +349,13 @@ static NSString *KayokoImageEditLocalizedString(NSString *key) {
     session.afterDismiss = nil;
     self.session = nil;
     session.controller.delegate = nil;
-    session.controller.dataSource = nil;
     UIViewController *presented = session.retryAlert ?: session.controller;
     session.retryAlert = nil;
     if (presented.isBeingPresented) {
         return;
     }
     if (presented.presentingViewController) {
-        [presented dismissViewControllerAnimated:animated completion:^{
-            KayokoRemoveImageEditFiles(session);
-        }];
-    } else {
-        KayokoRemoveImageEditFiles(session);
+        [presented dismissViewControllerAnimated:animated completion:nil];
     }
 }
 
